@@ -42,7 +42,7 @@ const inj = p => {
   if (i.gamesMissed >= 3) return i.status + ', ~' + i.gamesMissed + ' g (' + (i.summary || '') + ')';
   return i.status;
 };
-const hist = p => p.cons.gpHist.map(g => (g == null ? '–' : g)).join('/');
+const hist = p => p.cons.gpHist.map((g, i) => (g == null ? '–' : g + ((p.cons.excluded || []).includes(CONS.gpHistorySeasons[i]) ? '*' : ''))).join('/');
 
 const picks = C.myPicks(slot, teams, rounds);
 let md = '';
@@ -50,9 +50,9 @@ md += '# Draft cheat sheet: slot ' + slot + ', ' + teams + ' teams\n\n';
 md += 'Generated from `data/consensus.js` (built ' + CONS.generated + ' from ' + CONS.sources.join(', ') +
   ' + last season at half weight). Regenerate: `python3 scripts/build_consensus.py && node scripts/cheatsheet.js`.\n\n';
 md += 'Scoring: ' + Object.entries(scoring).map(([k, v]) => k + ' ' + v).join(', ') + '. ';
-md += 'Season FP = FP/G × projected games. Projected games blend 3-season games-played history (3:2:1 weights) with ESPN/FantasyPros games projections, minus games lost to current injuries.\n\n';
+md += 'Season FP = FP/G × projected games. Expected games = 50% career games-played rate (one-off outlier seasons such as a single major injury are ignored; recent seasons weigh more) + 50% ESPN/FantasyPros expected games, minus games lost to current injuries. Outlier seasons are marked * in the 3y GP column.\n\n';
 md += 'Your picks: ' + picks.map(p => '#' + p.pick).join(', ') + '.\n\n';
-md += '**Columns.** **FP/G**: fantasy points per game. **GP**: projected games. **3y GP**: games played in 2025-26/2024-25/2023-24. **VORP**: season points above replacement. **ADP**: Sleeper redraft ADP. **Avail**: chance the player is still there at that pick, from ADP.\n\n';
+md += '**Columns.** **FP/G**: fantasy points per game. **GP**: projected games. **3y GP**: games played in 2025-26/2024-25/2023-24 (* = outlier season ignored when projecting games). **VORP**: season points above replacement. **ADP**: Sleeper redraft ADP. **Avail**: chance the player is still there at that pick, from ADP.\n\n';
 
 md += '## Targets at your first picks\n\n';
 const used = new Set();

@@ -8,7 +8,8 @@ league's own scoring):
   * ESPN season projections (per game + projected games)
   * FantasyPros consensus projections (season totals + games)
   * Last season's actual stats (Sleeper), at half weight
-  * Games played in the last three seasons (Sleeper) for durability
+  * Career games played (Sleeper, up to 9 seasons) for durability, ignoring
+    one-off outlier seasons
   * ESPN injury report (status, estimated return date) + Sleeper injury fields
 
 Writes data/consensus.js (loaded by index.html) and data/consensus.csv.
@@ -33,10 +34,16 @@ STAT_KEYS = ['pts', 'reb', 'ast', 'stl', 'blk', 'to', 'tpm', 'dd', 'td', 'tf', '
 SEASON_GAMES = 82
 # Weight of each source in the consensus stat line.
 WEIGHTS = {'sleeper': 1.0, 'espn': 1.0, 'fantasypros': 1.0, 'last': 0.5}
-# Weights for games played in the last three seasons (most recent first).
-GP_HISTORY_WEIGHTS = [3, 2, 1]
+# Career games history: seasons back from last season, recency decay per season,
+# and games scheduled in shortened seasons (2019-20 bubble, 2020-21).
+CAREER_SEASONS = 9
+RECENCY_DECAY = 0.85
+SEASON_LENGTH = {2019: 72, 2020: 72}
+# A season under this share of the player's median rate is a one-off outlier
+# (e.g. a single major injury) and is dropped, at most a quarter of seasons.
+OUTLIER_SHARE = 0.55
 # Prior pulling durability toward a typical regular (~66 games) for small samples.
-GP_PRIOR_WEIGHT = 1.5
+GP_PRIOR_WEIGHT = 1.0
 GP_PRIOR_RATE = 0.80
 
 
@@ -101,7 +108,7 @@ def load_sleeper(season):
             # Sleeper's season projections are per game with gp = 1.
             proj[pid] = {k: num(s[k]) / (gp if gp > 1 else 1) for k in STAT_KEYS if k in s and num(s[k]) is not None}
     history = {}
-    for i in range(3):
+    for i in range(CAREER_SEASONS):
         yr = int(season) - 1 - i
         rows = sleeper_rows('stats', yr)
         history[yr] = {str(r['player_id']): (r.get('stats') or {}) for r in rows}
@@ -224,25 +231,44 @@ def games_missed_at_start(inj, season_start, season_end):
     return 0, ''
 
 
-def durability(pid, history, years_exp, season):
-    """Weighted share of games played over the last three seasons, shrunk to a prior."""
-    num_, den = 0.0, 0.0
-    gps = []
-    for i, w in enumerate(GP_HISTORY_WEIGHTS):
+def career_games(pid, history, years_exp, season):
+    """Each NBA season's games played (most recent first) as [season, gp, share of schedule]."""
+    out = []
+    for i in range(CAREER_SEASONS):
         yr = int(season) - 1 - i
+        if years_exp is None or years_exp <= i:
+            break  # before his rookie season
         s = history.get(yr, {}).get(pid) or {}
-        gp = num(s.get('gp'))
-        in_league = years_exp is not None and years_exp > i
-        if gp is None:
-            if not in_league:
-                gps.append(None)
-                continue
-            gp = 0.0  # in the league but no games: missed the whole season
-        gps.append(int(gp))
-        num_ += w * gp / SEASON_GAMES
+        gp = num(s.get('gp')) or 0.0  # in the league but no games: missed the whole season
+        length = SEASON_LENGTH.get(yr, SEASON_GAMES)
+        out.append([yr, int(gp), min(gp / length, 1.0)])
+    return out
+
+
+def durability(career):
+    """
+    Recency-weighted share of games played over the career, ignoring one-off
+    outlier seasons, shrunk toward a prior. Returns (rate, excluded seasons).
+    """
+    if not career:
+        return GP_PRIOR_RATE, []
+    rates = sorted(c[2] for c in career)
+    median = rates[len(rates) // 2] if len(rates) % 2 else (rates[len(rates) // 2 - 1] + rates[len(rates) // 2]) / 2
+    excluded = []
+    if len(career) >= 3:
+        max_drop = max(1, len(career) // 4)
+        for c in sorted(career, key=lambda c: c[2]):
+            if len(excluded) < max_drop and c[2] < OUTLIER_SHARE * median:
+                excluded.append(c[0])
+    num_, den = 0.0, 0.0
+    for i, (yr, gp, rate) in enumerate(career):
+        if yr in excluded:
+            continue
+        w = RECENCY_DECAY ** i
+        num_ += w * rate
         den += w
     rate = (num_ + GP_PRIOR_WEIGHT * GP_PRIOR_RATE) / (den + GP_PRIOR_WEIGHT)
-    return min(rate, 0.98), gps
+    return min(rate, 0.98), excluded
 
 
 def consensus_line(lines):
@@ -273,7 +299,7 @@ def main():
     start, end = dt.date.fromisoformat(args.start), dt.date.fromisoformat(args.end)
 
     log = lambda *a: print(*a, file=sys.stderr)
-    log('Sleeper projections, ADP and 3 seasons of stats...')
+    log('Sleeper projections, ADP and %d seasons of stats...' % CAREER_SEASONS)
     players, sl_proj, adp, history = load_sleeper(season)
     log('  %d players, %d projections, %d with ADP' % (len(players), len(sl_proj), len(adp)))
     sources_ok = ['Sleeper/Rotowire']
@@ -343,7 +369,9 @@ def main():
         if line.get('pts', 0) < 3 and pid not in adp:
             continue
 
-        rate, gps = durability(pid, history, p.get('years_exp'), season)
+        career = career_games(pid, history, p.get('years_exp'), season)
+        rate, excluded = durability(career)
+        gps = [c[1] for c in career[:3]] + [None] * (3 - min(3, len(career)))
         inj_src = injuries.get(norm_name(p['name']))
         if not inj_src and p.get('injury_status'):
             inj_src = {'status': p['injury_status'], 'comment': ' '.join(x for x in [p.get('injury_body_part'), p.get('injury_notes')] if x)}
@@ -368,6 +396,8 @@ def main():
             'gpSources': {'history': round(hist_gp, 1), 'espn': (espn_by_id.get(pid) or {}).get('gp'), 'fantasypros': (fp_by_id.get(pid) or {}).get('gp')},
             'gpHist': gps,
             'gpAvg': round(sum(played) / len(played), 1) if played else None,
+            'career': [[c[0], c[1]] for c in career],
+            'excluded': excluded,
             'durability': round(rate, 3),
             'injury': {
                 'status': (inj_src or {}).get('status') or '',

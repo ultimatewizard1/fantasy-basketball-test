@@ -449,7 +449,7 @@
     $('source').value = useConsensus() ? 'consensus' : 'sleeper';
     $('consensusInfo').innerHTML = CONS
       ? 'Bundled consensus built ' + esc(CONS.generated) + ' from ' + esc(CONS.sources.join(', ')) + ' + last season (half weight). ' +
-        'Games = 50% three-season games-played history (weighted 3:2:1, adjusted for current injuries) + 50% the sources\' own games projections.'
+        'Expected games = 50% career games-played rate (one-off outlier seasons ignored, recent seasons weighted more) + 50% ESPN/FantasyPros expected games, minus games lost to current injuries.'
       : 'No bundled consensus found (run <code>python3 scripts/build_consensus.py</code>).';
     $('projWeight').disabled = !!useConsensus();
     $('leagueName').textContent = data.leagueName ? data.leagueName + ' · ' + config.teams + ' teams · slot ' + config.slot : 'No league loaded';
@@ -537,7 +537,11 @@
     bits.push('VORP ' + fmt(p.vorp, 0));
     if (p.next != null) bits.push(pct(p.next) + (derived.onClock ? ' to last to your next pick' : ' chance he is there at #' + derived.decision));
     if (p.cons && p.cons.injury && p.cons.injury.gamesMissed >= 3) bits.push('injury: ~' + p.cons.injury.gamesMissed + ' games missed');
-    else if (p.gpAvg != null && p.gpAvg < 55) bits.push('averaged ' + fmt(p.gpAvg, 0) + ' GP over 3 seasons');
+    else if (p.cons && p.cons.excluded && p.cons.excluded.length) {
+      var yr = p.cons.excluded[0];
+      var season = (p.cons.career || []).filter(function (s) { return s[0] === yr; })[0];
+      bits.push('ignores outlier ' + seasonLabel(yr) + (season ? ' (' + season[1] + ' GP)' : ''));
+    } else if (p.gpAvg != null && p.gpAvg < 55) bits.push('averaged ' + fmt(p.gpAvg, 0) + ' GP over 3 seasons');
     if (p.diff != null && p.diff >= 10) bits.push('market undervalues him (+' + p.diff + ')');
     if (gainPct < 0.6) bits.push('limited lineup fit');
     if (p.injury && !(p.cons && p.cons.injury && p.cons.injury.gamesMissed >= 3)) bits.push('status: ' + p.injury);
@@ -566,12 +570,15 @@
     return '<span class="inj" title="' + esc(title) + '">' + esc(label) + '</span>';
   }
 
+  function seasonLabel(y) { return y + '-' + String(y + 1).slice(2); }
+
   function gpHistTitle(p) {
     if (!p.cons) return 'Games played last season';
-    var yrs = CONS.gpHistorySeasons || [];
-    return 'Games played ' + p.cons.gpHist.map(function (g, i) {
-      var y = yrs[i];
-      return (y ? y + '-' + String(y + 1).slice(2) : '') + ': ' + (g == null ? 'not in NBA' : g);
+    var c = p.cons.career || [];
+    if (!c.length) return 'No NBA games yet';
+    var excl = p.cons.excluded || [];
+    return 'Games played ' + c.map(function (s) {
+      return seasonLabel(s[0]) + ': ' + s[1] + (excl.indexOf(s[0]) >= 0 ? ' (outlier, ignored)' : '');
     }).join(', ');
   }
 
@@ -844,13 +851,20 @@
         '</td><td class="num"><strong>' + fmt(C.fantasyPoints(C.estimateBonuses(l), sc), 1) + '</strong></td></tr>';
     }).join('');
     var g = c.gpSources;
-    var gpTxt = 'History-based ' + fmt(g.history, 0) + (g.espn ? ', ESPN ' + g.espn : '') + (g.fantasypros ? ', FantasyPros ' + g.fantasypros : '');
+    var gpTxt = 'Career-based ' + fmt(g.history, 0) + (g.espn ? ', ESPN ' + g.espn : '') + (g.fantasypros ? ', FantasyPros ' + g.fantasypros : '');
+    var excl = c.excluded || [];
+    var careerHtml = (c.career || []).map(function (s) {
+      var out = excl.indexOf(s[0]) >= 0;
+      return '<span title="' + (out ? 'Outlier season, ignored' : '') + '" style="' + (out ? 'text-decoration:line-through;opacity:.6' : '') + '">' +
+        seasonLabel(s[0]) + ': ' + s[1] + '</span>';
+    }).join(' · ') || 'No NBA games yet';
     var inj = c.injury;
     return '<h3>Projections by source</h3><table class="detail-table"><tr><td class="muted small">Source</td><td class="num muted small">PTS / REB / AST / STL / BLK</td><td class="num muted small">FP/G</td></tr>' + srcRows + '</table>' +
       '<h3>Games</h3><table class="detail-table">' +
-      '<tr><td>Games played, last 3 seasons</td><td class="num">' + esc(gpHistTitle(p).replace('Games played ', '')) + '</td></tr>' +
-      '<tr><td>Durability rate (weighted, shrunk to 80%)</td><td class="num">' + Math.round(c.durability * 100) + '%</td></tr>' +
-      '<tr><td>Games projections</td><td class="num">' + esc(gpTxt) + '</td></tr>' +
+      '<tr><td colspan="2"><span class="muted small">Career games by season (struck through = outlier season, ignored)</span><br>' + careerHtml + '</td></tr>' +
+      '<tr><td>Career durability (recent seasons weigh more)</td><td class="num">' + Math.round(c.durability * 100) + '% of games</td></tr>' +
+      '<tr><td>Expected-games inputs</td><td class="num">' + esc(gpTxt) + '</td></tr>' +
+      '<tr><td><strong>Expected games this season</strong></td><td class="num"><strong>' + fmt(p.gp, 0) + '</strong>' + (config.gpOverrides[p.id] != null ? ' (your override)' : '') + '</td></tr>' +
       (inj ? '<tr><td>Current injury</td><td class="num bad">' + esc(inj.status) + (inj.gamesMissed ? ', ~' + inj.gamesMissed + ' games missed' : '') + '</td></tr>' : '') +
       '</table>' + (inj && inj.note ? '<p class="small">' + esc(inj.note) + '</p>' : '');
   }

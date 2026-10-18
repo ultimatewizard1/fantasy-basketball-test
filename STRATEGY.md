@@ -72,44 +72,58 @@ bench players, so the waiver wire starts around the 131st-best player.
 ## 3. Your board for this draft (data as of Oct 18, 2026)
 
 Numbers come from the bundled consensus (Sleeper/Rotowire + ESPN + FantasyPros, plus last
-season). Projected games blend each player's last three seasons of games played with the
-sources' own games estimates, minus games lost to current injuries. "% there" is the chance a
-player is still available at that pick, based on Sleeper ADP. Full tables are in
-[CHEATSHEET.md](CHEATSHEET.md).
+season). **Expected games** = 50% the player's career games-played rate + 50% the ESPN and
+FantasyPros expected games, minus games lost to current injuries. The career rate ignores
+one-off outlier seasons (a season under 55% of his own median) and weights recent seasons more.
+"% there" is the chance a player is still available at that pick, based on Sleeper ADP. Full
+tables are in [CHEATSHEET.md](CHEATSHEET.md).
 
-**Pick 6.** Take **Giannis** if he's there (34.0 FP/G, ~63 games, 77% there). If not, take
-**Cade Cunningham** (29.6, ~69 g, 47% there) or **Jalen Johnson** (30.9, ~66 g, ADP 14). Johnson
-has about a coin-flip chance of reaching #15, so taking him at 6 is reasonable. The fallbacks are
-**Karl-Anthony Towns** or **Alperen Şengün** (~27.5 FP/G, 71–72 games, 95%+ there): durable bigs
-who won't make it back to 15.
+**Effect of ignoring outlier seasons.** Single-injury years no longer sink healthy players, but
+chronic absences still count:
 
-**Pick 15.** Best of **Cooper Flagg** (68% there), **Evan Mobley** (86%) and **Amen Thompson** (89%),
-or Jalen Johnson if he slid. **Don't** spend #15 on Bam Adebayo, Josh Giddey, James Harden or Deni
-Avdija. Their ADPs are 36–38, and each has a ~90% chance of still being there at #26.
+| Player | Career games (recent first; * = outlier ignored) | Expected games | Rank / ADP |
+|---|---|---:|---|
+| Tyrese Haliburton | 0* 73 68 56 77 | 68 | 22 / 18 |
+| Jayson Tatum | 16* 72 74 74 76 64 66 79 80 | 72 | 6 / 11 |
+| Domantas Sabonis | 19* 70 81 79 62 62 62 74 74 | 72 | 9 / 28 |
+| Trae Young | 15* 76 53 73 76 63 60 81 | 71 | 35 / 22 |
+| Giannis Antetokounmpo | 36* 67 73 63 67 61 63 72 75 | 69 | 4 / 7 |
+| Joel Embiid | 38 19* 39 66 68 51 51 64 63 | 56 | 64 / 56 |
+| Ja Morant | 20 50 9* 61 57 63 67 | 61 | 103 / 48 |
 
-**Picks 26 and 35.** Take two of **Bam Adebayo** (26.2 FP/G, 74 g), **Josh Giddey** (27.7, 67 g),
-**James Harden** (24.8, 73 g) and **Deni Avdija** (24.9, 71 g). All four rank
-10–21 in your format, against ADP in the mid-to-high 30s. Each is ~60% to last to #35. **Jalen
-Duren**, **Pascal Siakam** and **Derrick White** are ~90% to last to #35.
+**Pick 6.** Take **Giannis** if he's there (34.0 FP/G, ~69 games, 77% there). Otherwise take
+**Jayson Tatum** (30.1 FP/G, ~72 games, rank 6). He is ~99% likely there at #6 and ~90% likely
+gone by #15. Next in line: **Jalen Johnson** (30.9, ~67 g) and **Cade Cunningham**
+(29.6, ~68 g).
 
-**Picks 46 and 55: centers slide.** **Donovan Clingan** (ADP 93, rank 29), **Rudy Gobert** (ADP 84),
-**Onyeka Okongwu** (ADP 72) and **Julius Randle** (ADP 62) are each 70–99% likely to still be there
-at #46–55. Fill C/UTIL with them here instead of spending early picks on centers.
+**Pick 15.** **Domantas Sabonis** is the standout. He ranks 9th for you (28.5 FP/G, ~72 games
+outside his 19-game season), but his ADP is 28, so he's almost certainly there at #15. If you'd
+rather wait, he's still ~60% likely to last to #26. Other options: **Cooper Flagg** (68% there),
+**Anthony Davis** (rank 18; ~62 games is the risk), and **Haliburton** (rank 22, ADP 18; fair
+value now).
+
+**Picks 26 and 35.** Take two of **Bam Adebayo** (rank 13), **Josh Giddey** (15), **James Harden**
+(21) and **Deni Avdija** (25). All four have ADPs of 36–38 and are ~90% likely there at #26.
+**Pascal Siakam**, **Derrick White** and **Walker Kessler** (ADP 59, rank 34) are ~90% likely to
+last to #35.
+
+**Picks 46 and 55: centers slide.** **Donovan Clingan** (ADP 93, rank 32), **Rudy Gobert** (ADP 84,
+rank 45), **Julius Randle** and **Onyeka Okongwu** are each 70–99% likely to still be there at
+#46–55. **Damian Lillard** (ADP 147, rank 47) missed all of last season but projects for ~68
+games. He's a strong value pick in rounds 6–8.
 
 **Let someone else draft these at their ADP** (rank in your format in brackets):
-- Tyrese Haliburton, ADP 18 [65]: 0 games last season. This is the one to override if you
-  believe he's fully back.
-- Trae Young, ADP 22 [72]: 15 games last season.
-- Ja Morant, ADP 48 [149].
-- Joel Embiid, ADP 56 [95]: 38/19/39 games over 3 seasons.
-- Jimmy Butler, ADP 68 [251]: torn ACL, return ~January.
-- Shaedon Sharpe, ADP 100: torn meniscus, ~March.
-- Mark Williams, ADP 125: shoulder, ~February.
-- Donte DiVincenzo, ADP 130: Achilles, ~April.
+- Trae Young, ADP 22 [35]
+- Ja Morant, ADP 48 [103]
+- Zion Williamson, ADP 51 [91]
+- Joel Embiid, ADP 56 [64]
+- Jimmy Butler, ADP 68 [246]: torn ACL, return ~January
+- Shaedon Sharpe, ADP 100: torn meniscus, ~March
+- Mark Williams, ADP 125: shoulder, ~February
+- Donte DiVincenzo, ADP 130: Achilles, ~April
 
-A mock draft taking the tool's top pick every round gave Giannis, Flagg, Bam, Giddey, Duren,
-Clingan, Randle, Okongwu, Caleb Wilson, Alexander-Walker, Podziemski, Wiggins and Acuff. That is
-about 249 FP/G across the 10 starters. Treat it as an example; real drafts vary.
+Disagree with a player's expected games? Open him in the tool and set your own number. The
+rankings update immediately.
 
 ## 4. Pick 6 in a 10-team snake: general rules
 
