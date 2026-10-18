@@ -69,63 +69,104 @@ bench players, so the waiver wire starts around the 131st-best player.
 - **Multi-position eligibility (PG/SG, SF/PF, PF/C) has real value.** It lets the lineup
   optimiser start your best 10 every night.
 
-## 3. Your board for this draft (data as of Oct 18, 2026)
+## 3. Lock-In changes the math
+
+Your league uses **Sleeper Lock-In** (`game_mode` 1): one game per player per week counts.
+After each game you can lock it in, or pass and hope for a better one. You must decide before
+his next game starts, and the last game of the week counts if you never lock. Only starters can
+be locked. The tool's default ranking (**Lock-In**) is built for this:
+
+- **Weekly value = the expected score of the game you end up locking.** With smart lock-or-pass
+  decisions over a typical 2–4-game week, that's about **the player's average + 0.67 × his
+  game-to-game swing** (standard deviation). Swing is measured from each player's ESPN game
+  logs last season, scored with your settings.
+- **Season value = weekly value × weeks with at least one game.** Missing 1–2 games in a week
+  costs almost nothing, but a missed week scores zero. Known injuries count as whole lost weeks.
+  For other expected absences, 70% are assumed to wipe out a week (injury stretches); the rest
+  are rest days.
+
+What that means for the draft:
+1. **Durability matters less than in standard leagues.** A star who plays 55–60 games but shows
+   up most weeks is fine. Anthony Davis climbs to #11 and Embiid to #53, about his ADP. Players
+   who miss **long stretches** still hurt: Morant ranks #110 against ADP 48, Zion #83 against 51.
+2. **Upside beats consistency.** A streaky player with the same average is worth more, because
+   you lock his big game and skip the dud. Big men are the streakiest (blocks and boards swing a
+   lot): Kel'el Ware, Zach Edey and Jakob Poeltl have ~50% swing and all move up. Very steady
+   players lose a little: SGA (24%) drops to #7 and Amen Thompson (25%) to #37.
+3. **Games per week stop mattering.** Don't pay for 4-game weeks or chase schedule streams.
+4. **Your 3 IR slots** accept Out, Suspended and DNR players. An injured player only costs you a
+   roster spot once he's healthy. That makes late-round stashes of long-term injured players
+   (Butler, Sharpe, Mark Williams) cheaper, but only at a late-round price.
+5. **Bench players can't be locked.** Their job is to fill a starting slot when a starter has no
+   game that week, so a deep bench matters less than strong starters.
+
+### Lock-or-pass rule during the season
+
+Compare the game he just played with his average (FP/G in the tool) and his swing:
+
+| Games he has left this week after this one | Lock if this game is at least… |
+|---|---|
+| 0 | It counts automatically |
+| 1 | his average |
+| 2 | average + 0.4 × swing |
+| 3 | average + 0.63 × swing |
+
+Example: Jokić averages ~41 with a swing of ~11 points (28%). With 2 games left, lock anything
+above ~45; otherwise pass.
+
+## 4. Your board for this draft (data as of Oct 18, 2026, Lock-In values)
 
 Numbers come from the bundled consensus (Sleeper/Rotowire + ESPN + FantasyPros, plus last
-season). **Expected games** = 50% the player's career games-played rate + 50% the ESPN and
-FantasyPros expected games, minus games lost to current injuries. The career rate ignores
-one-off outlier seasons (a season under 55% of his own median) and weights recent seasons more.
-"% there" is the chance a player is still available at that pick, based on Sleeper ADP. Full
-tables are in [CHEATSHEET.md](CHEATSHEET.md).
+season). **Expected games** blend the player's career games-played rate (one-off outlier
+seasons ignored, recent seasons weighted more) with ESPN/FantasyPros expected games, minus
+current injuries. **Lock/wk** is the expected locked score per week. "% there" is the chance a
+player is still available at that pick, from Sleeper ADP. Full tables are in
+[CHEATSHEET.md](CHEATSHEET.md).
 
-**Effect of ignoring outlier seasons.** Single-injury years no longer sink healthy players, but
-chronic absences still count:
-
-| Player | Career games (recent first; * = outlier ignored) | Expected games | Rank / ADP |
+| Player | Career games (recent first; * = outlier ignored) | Expected games | Lock-In rank / ADP |
 |---|---|---:|---|
-| Tyrese Haliburton | 0* 73 68 56 77 | 68 | 22 / 18 |
-| Jayson Tatum | 16* 72 74 74 76 64 66 79 80 | 72 | 6 / 11 |
+| Tyrese Haliburton | 0* 73 68 56 77 | 68 | 23 / 18 |
+| Jayson Tatum | 16* 72 74 74 76 64 66 79 80 | 72 | 5 / 11 |
 | Domantas Sabonis | 19* 70 81 79 62 62 62 74 74 | 72 | 9 / 28 |
-| Trae Young | 15* 76 53 73 76 63 60 81 | 71 | 35 / 22 |
 | Giannis Antetokounmpo | 36* 67 73 63 67 61 63 72 75 | 69 | 4 / 7 |
-| Joel Embiid | 38 19* 39 66 68 51 51 64 63 | 56 | 64 / 56 |
-| Ja Morant | 20 50 9* 61 57 63 67 | 61 | 103 / 48 |
+| Anthony Davis | 20* 51 75 56 40 36 62 56 75 | 62 | 11 / 15 |
+| Joel Embiid | 38 19* 39 66 68 51 51 64 63 | 56 | 53 / 56 |
+| Ja Morant | 20 50 9* 61 57 63 67 | 61 | 110 / 48 |
 
-**Pick 6.** Take **Giannis** if he's there (34.0 FP/G, ~69 games, 77% there). Otherwise take
-**Jayson Tatum** (30.1 FP/G, ~72 games, rank 6). He is ~99% likely there at #6 and ~90% likely
-gone by #15. Next in line: **Jalen Johnson** (30.9, ~67 g) and **Cade Cunningham**
-(29.6, ~68 g).
+**Pick 6.** Take **Giannis** if he's there (41.5 locked/wk, 77% there). Otherwise **Jayson
+Tatum** and **Jalen Johnson** are a dead heat in Lock-In: Tatum 36.2/wk over ~72 games, Johnson
+38.0/wk over ~67 games, a higher ceiling but less durable. Take **Tatum** at 6, because Johnson
+has a ~50% chance of reaching #15 and Tatum only ~10%. If Tatum's Achilles worries you, take
+Johnson. **Cade Cunningham** (47% there) and **SGA** (31%) are close behind.
 
-**Pick 15.** **Domantas Sabonis** is the standout. He ranks 9th for you (28.5 FP/G, ~72 games
-outside his 19-game season), but his ADP is 28, so he's almost certainly there at #15. If you'd
-rather wait, he's still ~60% likely to last to #26. Other options: **Cooper Flagg** (68% there),
-**Anthony Davis** (rank 18; ~62 games is the risk), and **Haliburton** (rank 22, ADP 18; fair
-value now).
+**Pick 15.** **Domantas Sabonis** (rank 9, ADP 28, almost certainly there) or **Anthony Davis**
+(rank 11, ADP 15, ~60% there). **Josh Giddey** (rank 12) is ~93% likely to last to #26, so wait
+on him. **Cooper Flagg** (rank 14, 68% there) is the other option.
 
-**Picks 26 and 35.** Take two of **Bam Adebayo** (rank 13), **Josh Giddey** (15), **James Harden**
-(21) and **Deni Avdija** (25). All four have ADPs of 36–38 and are ~90% likely there at #26.
-**Pascal Siakam**, **Derrick White** and **Walker Kessler** (ADP 59, rank 34) are ~90% likely to
-last to #35.
+**Picks 26 and 35.** Take two of **Josh Giddey**, **Bam Adebayo** (16), **Jalen Duren** (20, ADP 48),
+**Deni Avdija** (22), **James Harden** (26) and **Walker Kessler** (27, ADP 59).
 
-**Picks 46 and 55: centers slide.** **Donovan Clingan** (ADP 93, rank 32), **Rudy Gobert** (ADP 84,
-rank 45), **Julius Randle** and **Onyeka Okongwu** are each 70–99% likely to still be there at
-#46–55. **Damian Lillard** (ADP 147, rank 47) missed all of last season but projects for ~68
-games. He's a strong value pick in rounds 6–8.
+**Picks 46 and 55: centers slide, and the streaky ones are worth more here.** Targets:
+- **Donovan Clingan**: rank 30, ADP 93
+- **Kel'el Ware**: rank 40, ADP 76, the most boom-or-bust big
+- **Rudy Gobert**: rank 45, ADP 84
+- **Damian Lillard**: rank 50, ADP 147
+- **Joel Embiid**: rank 53, ADP 56. Fine in Lock-In: he only has to play once a week.
 
-**Let someone else draft these at their ADP** (rank in your format in brackets):
-- Trae Young, ADP 22 [35]
-- Ja Morant, ADP 48 [103]
-- Zion Williamson, ADP 51 [91]
-- Joel Embiid, ADP 56 [64]
-- Jimmy Butler, ADP 68 [246]: torn ACL, return ~January
-- Shaedon Sharpe, ADP 100: torn meniscus, ~March
-- Mark Williams, ADP 125: shoulder, ~February
-- Donte DiVincenzo, ADP 130: Achilles, ~April
+In later rounds, **Zach Edey** (ADP 101) and **Jakob Poeltl** (ADP 118) are high-swing bigs.
+
+**Let someone else draft these at their ADP:**
+- Ja Morant, ADP 48 [rank 110]
+- Zion Williamson, ADP 51 [83]
+- Kristaps Porziņģis, ADP 89 [142]
+- Paul George, ADP 86 [98]
+- Jimmy Butler, ADP 68: out until ~January. An IR stash only in the last rounds.
+- Shaedon Sharpe, Mark Williams, Donte DiVincenzo: out for months. Late IR stashes at most.
 
 Disagree with a player's expected games? Open him in the tool and set your own number. The
 rankings update immediately.
 
-## 4. Pick 6 in a 10-team snake: general rules
+## 5. Pick 6 in a 10-team snake: general rules
 
 Your picks: **6, 15, 26, 35, 46, 55, 66, 75, 86, 95, 106, 115, 126.**
 You wait 9 picks and 11 picks, alternating. You are mid-board, so you never get the turn's
@@ -136,16 +177,17 @@ back-to-back picks, but you never wait 18 picks either.
 | 1 | 6 | Take the highest-VORP player left. Five players are gone, and at least one elite big usually remains. If a top big and a top guard are close, take the big. Big-man depth thins out faster than guard depth in this scoring. |
 | 2–3 | 15, 26 | Best value, with a lean toward stat-stuffers (rebounds + assists + stocks). Use the **Next** column: if two players are close and one has a <30% chance to reach pick 26, take him now. |
 | 4–6 | 35, 46, 55 | By now you should have 2 bigs. Start filling guard slots with **assist + steal** guards rather than scorers. Check the **Positional scarcity** table: if one position has the fewest players left above replacement, that is your next fill. |
-| 7–9 | 66, 75, 86 | Fill whatever slot is still empty (often SF or G). The **Fits my lineup** filter shows exactly who would start for you. Favour players projected for 70+ games. |
-| 10–13 | 95, 106, 115, 126 | Bench: (a) backup centers who would start if the starter gets hurt, (b) young players with rising minutes, (c) high-stocks role players. Skip anyone already ruled out for months unless he's a true star. |
+| 7–9 | 66, 75, 86 | Fill whatever slot is still empty (often SF or G). The **Fits my lineup** filter shows exactly who would start for you. Favour players who show up most weeks over iron-man role players. |
+| 10–13 | 95, 106, 115, 126 | Bench: (a) backup centers who would start if the starter gets hurt, (b) young players with rising minutes, (c) high-stocks role players. Long-term injured stars can go straight to one of your 3 IR slots, so they're fine stashes here. |
 
 ### Rules of thumb on the clock
 
 1. **Follow the "Best pick now" card** unless you have news the data doesn't (a late injury,
    a trade, a minutes change).
-2. **Season points > per-game points**, because games played count. The default ranking uses
-   season totals. Discount stars with a history of missing 20+ games. Switch to per-game ranking
-   under Settings if you believe a player will stay healthy.
+2. **Rank by Lock-In value** (the default): expected locked score per week × weeks with a game.
+   Discount players who miss **long stretches**, not stars who sit a game here and there. If
+   your league were a standard points league, you'd switch the ranking to *Season fantasy
+   points* under Settings.
 3. **Don't draft for ADP value alone.** A big green **+/-** means you can probably wait. It isn't
    a reason to reach early.
 4. **Watch tier breaks.** Sort the board by VORP and filter by position. Dashed lines mark tier
@@ -153,7 +195,7 @@ back-to-back picks, but you never wait 18 picks either.
 5. **Turnovers and technicals:** small, but they break ties. Prefer the cleaner player when values
    are close.
 
-## 5. Draft-day checklist
+## 6. Draft-day checklist
 
 1. Download the repo (Code → Download ZIP), unzip it and double-click `index.html`. Nothing to
    install. Sleeper's API allows browser requests, so live sync works from a local file.

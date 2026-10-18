@@ -304,6 +304,68 @@
     return r;
   }
 
+  /* ---------------- Sleeper Lock-In ---------------- */
+
+  /*
+   * In Lock-In leagues one game per player per week counts: after each game
+   * you may lock it, or pass and wait for a later game (the last game of the
+   * week is used if nothing was locked). With normally distributed game
+   * scores the best policy locks game i when it beats the value of waiting,
+   * and the expected locked score follows the backward recursion
+   *   v1 = mu,  v(k+1) = E[max(X, vk)] = vk + sd * (pdf(z) - z * (1 - cdf(z))),  z = (vk - mu) / sd.
+   */
+  var LOCKIN_GAMES_PER_WEEK = { 2: 0.1, 3: 0.5, 4: 0.4 };
+  var LOCKIN_WEEKS = 24;
+  var DEFAULT_CV = 0.37;          // median game-to-game sd/mean in last season's logs
+  var MISSED_GAMES_IN_LOST_WEEKS = 0.7; // share of missed games that wipe out a whole week
+  var TEAM_GAMES_PER_WEEK = 3.4;
+
+  function normPdf(z) { return Math.exp(-z * z / 2) / Math.sqrt(2 * Math.PI); }
+
+  function lockInValue(mu, sd, n) {
+    var v = mu;
+    for (var i = 1; i < n; i++) {
+      var z = (v - mu) / sd;
+      v = v + sd * (normPdf(z) - z * (1 - normCdf(z)));
+    }
+    return v;
+  }
+
+  function weeklyLockIn(mu, sd) {
+    var total = 0;
+    Object.keys(LOCKIN_GAMES_PER_WEEK).forEach(function (n) {
+      total += LOCKIN_GAMES_PER_WEEK[n] * lockInValue(mu, sd, +n);
+    });
+    return total;
+  }
+
+  /*
+   * Weeks with at least one game. Games lost to a known current injury are
+   * whole weeks; of the remaining expected absences most come in multi-week
+   * stretches, but rest days and one-game absences don't cost the week.
+   */
+  function lockInWeeks(gp, gamesMissed) {
+    var missed = Math.min(num(gamesMissed), 82);
+    var lostWeeks = missed / TEAM_GAMES_PER_WEEK;
+    var avail = 82 - missed;
+    if (avail <= 0) return 0;
+    var rate = Math.min(1, num(gp) / avail);
+    return Math.max(0, LOCKIN_WEEKS - lostWeeks) * (1 - MISSED_GAMES_IN_LOST_WEEKS * (1 - rate));
+  }
+
+  // opts: { cv: id -> sd/mean, missed: id -> games lost to a current injury }
+  function applyLockIn(pool, opts) {
+    opts = opts || {};
+    pool.forEach(function (p) {
+      var cv = opts.cv && opts.cv[p.id] != null ? opts.cv[p.id] : DEFAULT_CV;
+      var sd = Math.max(cv * p.fpg, 1);
+      p.cv = cv;
+      p.lockWeekly = weeklyLockIn(p.fpg, sd);
+      p.lockWeeks = lockInWeeks(p.gp, opts.missed && opts.missed[p.id]);
+      p.lockin = p.lockWeekly * p.lockWeeks;
+    });
+  }
+
   /* ---------------- my roster ---------------- */
 
   // Starters count fully, bench players at benchWeight (they cover off-days/injuries).
@@ -543,6 +605,12 @@
     toPerGame: toPerGame,
     looksPerGame: looksPerGame,
     estimateBonuses: estimateBonuses,
+    lockInValue: lockInValue,
+    weeklyLockIn: weeklyLockIn,
+    lockInWeeks: lockInWeeks,
+    applyLockIn: applyLockIn,
+    LOCKIN_WEEKS: LOCKIN_WEEKS,
+    DEFAULT_CV: DEFAULT_CV,
     normalizePositions: normalizePositions,
     slotAccepts: slotAccepts,
     starterSlots: starterSlots,

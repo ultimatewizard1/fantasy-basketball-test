@@ -144,6 +144,7 @@ def load_espn(espn_season):
                     continue
                 line = {ESPN_STATS[k]: v for k, v in avg.items() if k in ESPN_STATS}
                 out[norm_name(p.get('fullName'))] = {
+                    'espn_id': p.get('id'),
                     'name': p.get('fullName'),
                     'line': line,
                     'gp': avg.get('42'),
@@ -167,6 +168,66 @@ def load_espn_injuries():
                 'date': inj.get('date'),
             }
     return out
+
+
+# League scoring, for scoring individual games from ESPN game logs.
+GAME_SCORING = {'pts': 0.5, 'reb': 1, 'ast': 1, 'stl': 2, 'blk': 2, 'to': -1, 'tpm': 0.5}
+MIN_LOG_GAMES = 15
+
+
+def game_fp(g):
+    fp = sum(GAME_SCORING[k] * g.get(k, 0) for k in GAME_SCORING)
+    tens = sum(1 for k in ('pts', 'reb', 'ast', 'stl', 'blk') if g.get(k, 0) >= 10)
+    fp += 1 if tens >= 2 else 0
+    fp += 2 if tens >= 3 else 0
+    fp += 2 if g.get('pts', 0) >= 40 else 0
+    fp += 2 if g.get('pts', 0) >= 50 else 0
+    return fp
+
+
+def espn_game_fps(espn_id, espn_season):
+    """Fantasy points for each regular-season game in an ESPN game log."""
+    url = 'https://site.web.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/%s/gamelog?season=%d' % (espn_id, espn_season)
+    d = get_json(url)
+    names = d.get('names') or []
+    idx = {n: i for i, n in enumerate(names)}
+    fps = []
+    for st in d.get('seasonTypes', []):
+        if 'Regular Season' not in (st.get('displayName') or ''):
+            continue
+        for cat in st.get('categories', []):
+            for ev in cat.get('events', []) or []:
+                s = ev.get('stats') or []
+                try:
+                    if float(s[idx['minutes']] or 0) <= 0:
+                        continue
+                    g = {
+                        'pts': float(s[idx['points']]), 'reb': float(s[idx['totalRebounds']]),
+                        'ast': float(s[idx['assists']]), 'stl': float(s[idx['steals']]),
+                        'blk': float(s[idx['blocks']]), 'to': float(s[idx['turnovers']]),
+                        'tpm': float(s[idx['threePointFieldGoalsMade-threePointFieldGoalsAttempted']].split('-')[0]),
+                    }
+                except (KeyError, ValueError, IndexError):
+                    continue
+                fps.append(game_fp(g))
+    return fps
+
+
+def game_volatility(espn_id, espn_last_season):
+    """
+    Coefficient of variation (sd / mean) of single-game fantasy points, from
+    last season's game log, adding the season before when the sample is small.
+    """
+    fps = espn_game_fps(espn_id, espn_last_season)
+    if len(fps) < MIN_LOG_GAMES:
+        fps += espn_game_fps(espn_id, espn_last_season - 1)
+    if len(fps) < MIN_LOG_GAMES:
+        return None, len(fps)
+    mean = sum(fps) / len(fps)
+    if mean <= 0:
+        return None, len(fps)
+    sd = (sum((x - mean) ** 2 for x in fps) / (len(fps) - 1)) ** 0.5
+    return sd / mean, len(fps)
 
 
 # ---------------------------------------------------------------- FantasyPros
@@ -407,6 +468,24 @@ def main():
                 'summary': why,
             } if inj_src else None,
         })
+
+    # Game-to-game volatility for Lock-In valuation, for everyone draftable.
+    from concurrent.futures import ThreadPoolExecutor
+    espn_last = int(season)  # ESPN labels 2025-26 as 2026
+    todo = [r for r in rows if r['id'] in espn_by_id and ((r['adp'] or 999) <= 260 or r['line'].get('pts', 0) >= 12)]
+    log('ESPN game logs for %d players (volatility)...' % len(todo))
+
+    def vol(r):
+        try:
+            return r, game_volatility(espn_by_id[r['id']]['espn_id'], espn_last)
+        except Exception as e:  # one failed log shouldn't sink the build
+            return r, (None, 0)
+    with ThreadPoolExecutor(max_workers=12) as ex:
+        for r, (cv, n) in ex.map(vol, todo):
+            r['cv'] = round(cv, 3) if cv else None
+            r['logGames'] = n
+    have = [r['cv'] for r in rows if r.get('cv')]
+    log('  volatility for %d players, median CV %.2f' % (len(have), sorted(have)[len(have) // 2] if have else 0))
 
     rows.sort(key=lambda r: (r['adp'] or 999))
     out = {

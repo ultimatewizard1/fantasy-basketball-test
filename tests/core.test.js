@@ -179,3 +179,22 @@ test('missing stats are filled from the other source before blending', () => {
   // tf only exists last season (0.2/g) so it counts fully: 10 - 0.4
   assert.ok(Math.abs(pool[0].fpg - 9.6) < 1e-9);
 });
+
+test('lock-in value: optimal stopping over n games', () => {
+  assert.equal(C.lockInValue(30, 8, 1), 30);
+  assert.ok(Math.abs(C.lockInValue(30, 8, 2) - (30 + 8 * 0.39894)) < 1e-3);
+  const v3 = C.lockInValue(30, 8, 3), v4 = C.lockInValue(30, 8, 4);
+  assert.ok(Math.abs(v3 - (30 + 8 * 0.6297)) < 0.01);
+  assert.ok(v4 > v3);
+  // More volatile player with the same average is worth more in Lock-In.
+  assert.ok(C.weeklyLockIn(25, 10) > C.weeklyLockIn(25, 6));
+});
+
+test('lock-in weeks: known injuries cost whole weeks, scattered absences mostly do not', () => {
+  assert.equal(Math.round(C.lockInWeeks(82, 0)), C.LOCKIN_WEEKS);
+  // 62 of 82 games with no known injury loses 0.7 * 20/82 of the weeks.
+  assert.ok(Math.abs(C.lockInWeeks(62, 0) - C.LOCKIN_WEEKS * (1 - 0.7 * 20 / 82)) < 1e-9);
+  // Out for 34 games, then plays every remaining game.
+  assert.ok(Math.abs(C.lockInWeeks(48, 34) - (C.LOCKIN_WEEKS - 34 / 3.4)) < 1e-9);
+  assert.equal(C.lockInWeeks(0, 82), 0);
+});

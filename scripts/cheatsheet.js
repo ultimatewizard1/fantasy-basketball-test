@@ -29,7 +29,14 @@ CONS.players.forEach(r => {
   meta[r.id] = { full_name: r.name, team: r.team, fantasy_positions: r.pos };
 });
 const pool = C.buildPool({ players: meta, projections: proj, stats: {}, adp, games }, { scoring, projWeight: 1 });
-const repl = C.applyValues(pool, roster, teams, 'total');
+const cv = {}, missed = {};
+pool.forEach(p => {
+  const r = byId[p.id];
+  if (r.cv) cv[p.id] = r.cv;
+  if (r.injury) missed[p.id] = r.injury.gamesMissed;
+});
+C.applyLockIn(pool, { cv, missed });
+const repl = C.applyValues(pool, roster, teams, 'lockin');
 pool.forEach(p => { p.cons = byId[p.id]; p.diff = p.adpRank != null ? p.adpRank - p.rank : null; });
 
 const f = (n, d = 1) => (n == null || !isFinite(n) ? '–' : Number(n).toFixed(d));
@@ -50,18 +57,18 @@ md += '# Draft cheat sheet: slot ' + slot + ', ' + teams + ' teams\n\n';
 md += 'Generated from `data/consensus.js` (built ' + CONS.generated + ' from ' + CONS.sources.join(', ') +
   ' + last season at half weight). Regenerate: `python3 scripts/build_consensus.py && node scripts/cheatsheet.js`.\n\n';
 md += 'Scoring: ' + Object.entries(scoring).map(([k, v]) => k + ' ' + v).join(', ') + '. ';
-md += 'Season FP = FP/G × projected games. Expected games = 50% career games-played rate (one-off outlier seasons such as a single major injury are ignored; recent seasons weigh more) + 50% ESPN/FantasyPros expected games, minus games lost to current injuries. Outlier seasons are marked * in the 3y GP column.\n\n';
+md += '**Lock-In scoring:** one game per player per week counts, and you choose which. Rankings use **Lock/wk** (the expected score of the game you lock, with smart lock-or-pass decisions over 2–4 games, from his projected average and game-to-game **Swing** in last season\'s ESPN game logs) × weeks he plays at least one game. A missed game here and there barely matters; whole weeks lost to injury do. Expected games = 50% career games-played rate (one-off outlier seasons such as a single major injury are ignored; recent seasons weigh more) + 50% ESPN/FantasyPros expected games, minus games lost to current injuries. Outlier seasons are marked * in the 3y GP column.\n\n';
 md += 'Your picks: ' + picks.map(p => '#' + p.pick).join(', ') + '.\n\n';
-md += '**Columns.** **FP/G**: fantasy points per game. **GP**: projected games. **3y GP**: games played in 2025-26/2024-25/2023-24 (* = outlier season ignored when projecting games). **VORP**: season points above replacement. **ADP**: Sleeper redraft ADP. **Avail**: chance the player is still there at that pick, from ADP.\n\n';
+md += '**Columns.** **FP/G**: fantasy points per game. **GP**: projected games. **3y GP**: games played in 2025-26/2024-25/2023-24 (* = outlier season ignored when projecting games). **VORP**: season Lock-In points above replacement. **Swing**: game-to-game standard deviation ÷ average. **ADP**: Sleeper redraft ADP. **Avail**: chance the player is still there at that pick, from ADP.\n\n';
 
 md += '## Targets at your first picks\n\n';
 const used = new Set();
 picks.slice(0, 6).forEach(mp => {
   const list = pool.filter(p => !used.has(p.id) && C.availability(effAdp(p), 1, mp.pick) >= 0.4).slice(0, 8);
   list.slice(0, 5).forEach(p => used.add(p.id));
-  md += '### Round ' + mp.round + ', pick ' + mp.pick + '\n\n| Player | Pos | FP/G | GP | 3y GP | VORP | ADP | Avail | Note |\n|---|---|---:|---:|---|---:|---:|---:|---|\n';
+  md += '### Round ' + mp.round + ', pick ' + mp.pick + '\n\n| Player | Pos | FP/G | Lock/wk | Swing | GP | 3y GP | VORP | ADP | Avail | Note |\n|---|---|---:|---:|---:|---:|---|---:|---:|---:|---|\n';
   list.forEach(p => {
-    md += '| ' + p.name + ' (' + p.team + ') | ' + p.pos.join('/') + ' | ' + f(p.fpg) + ' | ' + f(p.gp, 0) + ' | ' + hist(p) + ' | ' + f(p.vorp, 0) + ' | ' + f(p.adp) + ' | ' + pct(C.availability(effAdp(p), 1, mp.pick)) + ' | ' + inj(p) + ' |\n';
+    md += '| ' + p.name + ' (' + p.team + ') | ' + p.pos.join('/') + ' | ' + f(p.fpg) + ' | ' + f(p.lockWeekly) + ' | ' + pct(p.cv) + ' | ' + f(p.gp, 0) + ' | ' + hist(p) + ' | ' + f(p.vorp, 0) + ' | ' + f(p.adp) + ' | ' + pct(C.availability(effAdp(p), 1, mp.pick)) + ' | ' + inj(p) + ' |\n';
   });
   md += '\n';
 });
@@ -78,9 +85,9 @@ pool.filter(p => p.diff != null && p.rank <= 130 && p.diff >= 15).sort((a, b) =>
 });
 
 md += '\n## Overall rankings (top 160)\n\nReplacement level (season FP): ' + C.BASE_POSITIONS.map(pos => pos + ' ' + f(repl.repl[pos], 0)).join(', ') + '.\n\n';
-md += '| Rk | Player | Pos | FP/G | GP | 3y GP | Season FP | VORP | ADP | +/- | Injury |\n|---:|---|---|---:|---:|---|---:|---:|---:|---:|---|\n';
+md += '| Rk | Player | Pos | FP/G | Lock/wk | Swing | GP | 3y GP | Lock-In season | VORP | ADP | +/- | Injury |\n|---:|---|---|---:|---:|---:|---:|---|---:|---:|---:|---:|---|\n';
 pool.slice(0, 160).forEach(p => {
-  md += '| ' + p.rank + ' | ' + p.name + ' (' + p.team + ') | ' + p.pos.join('/') + ' | ' + f(p.fpg) + ' | ' + f(p.gp, 0) + ' | ' + hist(p) + ' | ' + f(p.total, 0) + ' | ' + f(p.vorp, 0) + ' | ' + f(p.adp) + ' | ' + (p.diff == null ? '–' : (p.diff > 0 ? '+' : '') + p.diff) + ' | ' + inj(p) + ' |\n';
+  md += '| ' + p.rank + ' | ' + p.name + ' (' + p.team + ') | ' + p.pos.join('/') + ' | ' + f(p.fpg) + ' | ' + f(p.lockWeekly) + ' | ' + pct(p.cv) + ' | ' + f(p.gp, 0) + ' | ' + hist(p) + ' | ' + f(p.lockin, 0) + ' | ' + f(p.vorp, 0) + ' | ' + f(p.adp) + ' | ' + (p.diff == null ? '–' : (p.diff > 0 ? '+' : '') + p.diff) + ' | ' + inj(p) + ' |\n';
 });
 
 fs.writeFileSync(path.join(ROOT, 'CHEATSHEET.md'), md);

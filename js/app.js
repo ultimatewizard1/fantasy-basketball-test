@@ -18,7 +18,7 @@
     projSeason: '',
     statsSeason: '',
     projWeight: 0.6,
-    valueKey: 'total',
+    valueKey: 'lockin',
     gamesCap: 82,
     benchWeight: 0.3,
     adpKey: '',
@@ -29,6 +29,8 @@
   var CONS = window.CONSENSUS || null;
 
   var config = Object.assign({}, DEFAULT_CONFIG, load(LS.config) || {});
+  // Saved settings from before Lock-In support ranked by season totals.
+  if (!config.lockinDefault) { config.valueKey = 'lockin'; config.lockinDefault = true; }
   var data = load(LS.data) || { projections: {}, stats: {}, players: {}, csv: null, leagueName: '', sources: {} };
   var picksState = load(LS.picks) || { mode: 'manual', picks: [] };
   var players = data.players || {};
@@ -137,6 +139,12 @@
   function finishRebuild() {
     poolById = {};
     pool.forEach(function (p) { poolById[p.id] = p; });
+    var cv = {}, missed = {};
+    pool.forEach(function (p) {
+      if (p.cons && p.cons.cv) cv[p.id] = p.cons.cv;
+      if (p.cons && p.cons.injury) missed[p.id] = p.cons.injury.gamesMissed;
+    });
+    C.applyLockIn(pool, { cv: cv, missed: missed });
     replInfo = pool.length ? C.applyValues(pool, config.roster, config.teams, config.valueKey) : null;
     pool.forEach(function (p) { p.diff = p.adpRank != null ? p.adpRank - p.rank : null; });
   }
@@ -496,7 +504,7 @@
 
   function render() {
     if (!pool.length) {
-      $('board').querySelector('tbody').innerHTML = '<tr><td colspan="14" class="muted">No player data yet. Go to <strong>Settings &amp; data</strong> and click <strong>Load from Sleeper</strong>.</td></tr>';
+      $('board').querySelector('tbody').innerHTML = '<tr><td colspan="15" class="muted">No player data yet. Go to <strong>Settings &amp; data</strong> and click <strong>Load from Sleeper</strong>.</td></tr>';
       $('recs').innerHTML = '';
       renderSide();
       renderClock();
@@ -533,7 +541,7 @@
   function whyText(p) {
     var bits = [];
     var gainPct = derived.recs[0] && derived.recs[0].gain > 0 ? p.gain / derived.recs[0].gain : 1;
-    bits.push(fmt(p.fpg) + ' FP/G, ' + fmt(p.gp, 0) + ' GP');
+    bits.push(fmt(p.fpg) + ' FP/G, ~' + fmt(p.lockWeekly, 1) + ' locked/wk, ' + fmt(p.gp, 0) + ' GP');
     bits.push('VORP ' + fmt(p.vorp, 0));
     if (p.next != null) bits.push(pct(p.next) + (derived.onClock ? ' to last to your next pick' : ' chance he is there at #' + derived.decision));
     if (p.cons && p.cons.injury && p.cons.injury.gamesMissed >= 3) bits.push('injury: ~' + p.cons.injury.gamesMissed + ' games missed');
@@ -568,6 +576,10 @@
     else if (inj && inj.gamesMissed >= 3) label += ' ~' + inj.gamesMissed + 'g';
     var title = inj ? [inj.summary, inj.note].filter(Boolean).join(': ') : status;
     return '<span class="inj" title="' + esc(title) + '">' + esc(label) + '</span>';
+  }
+
+  function valueLabel() {
+    return { lockin: 'season Lock-In pts', fpg: 'FP/G', total: 'season FP' }[config.valueKey] || 'season FP';
   }
 
   function seasonLabel(y) { return y + '-' + String(y + 1).slice(2); }
@@ -631,7 +643,8 @@
         '<td class="num">' + fmt(p.fpg) + '</td>' +
         '<td class="num">' + fmt(p.gp, 0) + '</td>' +
         '<td class="num ' + (p.gpAvg != null && p.gpAvg < 55 ? 'bad' : '') + '" title="' + esc(gpHistTitle(p)) + '">' + fmt(p.gpAvg, 0) + '</td>' +
-        '<td class="num">' + fmt(p.total, 0) + '</td>' +
+        '<td class="num">' + fmt(p.lockWeekly, 1) + '</td>' +
+        '<td class="num">' + fmt(config.valueKey === 'lockin' ? p.lockin : p.total, 0) + '</td>' +
         '<td class="num">' + fmt(p.vorp, config.valueKey === 'fpg' ? 1 : 0) + '</td>' +
         '<td class="num">' + (d ? '–' : fmt(p.gain, config.valueKey === 'fpg' ? 1 : 0)) + '</td>' +
         '<td class="num">' + (d ? '–' : fmt(p.score, config.valueKey === 'fpg' ? 1 : 0)) + '</td>' +
@@ -640,7 +653,7 @@
         '<td class="num ' + nextCls + '">' + (d ? '–' : pct(p.next)) + '</td>' +
         '<td><div class="actions">' + actions + '</div></td></tr>';
     }).join('');
-    $('board').querySelector('tbody').innerHTML = html || '<tr><td colspan="14" class="muted">No players match.</td></tr>';
+    $('board').querySelector('tbody').innerHTML = html || '<tr><td colspan="15" class="muted">No players match.</td></tr>';
   }
 
   function renderSide() {
@@ -718,7 +731,7 @@
     html += '</div>';
 
     // Positional scarcity
-    html += '<h2>Positional scarcity</h2><div class="card"><table><tr><th>Pos</th><th class="num">Replacement level (' + (config.valueKey === 'fpg' ? 'FP/G' : 'season FP') + ')</th><th class="num">Players above replacement (left)</th><th>Best available</th><th class="num">Top-5 avg VORP left</th></tr>';
+    html += '<h2>Positional scarcity</h2><div class="card"><table><tr><th>Pos</th><th class="num">Replacement level (' + valueLabel() + ')</th><th class="num">Players above replacement (left)</th><th>Best available</th><th class="num">Top-5 avg VORP left</th></tr>';
     C.BASE_POSITIONS.forEach(function (pos) {
       var left = avail.filter(function (p) { return p.pos.indexOf(pos) >= 0; });
       var above = left.filter(function (p) { return p.vorp > 0; });
@@ -821,7 +834,10 @@
       (p.cons ? '' :
         '<tr><td>Sleeper projection FP/G</td><td class="num">' + fmt(p.projFpg, 2) + '</td></tr>' +
         '<tr><td>Last season FP/G</td><td class="num">' + fmt(p.lastFpg, 2) + (p.lastGp ? ' (' + p.lastGp + ' GP)' : '') + '</td></tr>') +
-      '<tr><td>Projected games / season FP</td><td class="num">' + fmt(p.gp, 0) + ' / ' + fmt(p.total, 0) + '</td></tr>' +
+      '<tr><td>Projected games / season FP (all games)</td><td class="num">' + fmt(p.gp, 0) + ' / ' + fmt(p.total, 0) + '</td></tr>' +
+      '<tr><td title="Expected locked score per week: best-game choice over 2-4 games, using his game-to-game swing">Lock-In: expected locked score / week</td><td class="num"><strong>' + fmt(p.lockWeekly, 1) + '</strong></td></tr>' +
+      '<tr><td>Lock-In: game-to-game swing (sd ÷ average)' + (p.cons && p.cons.logGames ? ', ' + p.cons.logGames + ' games logged' : ', league typical') + '</td><td class="num">' + Math.round(p.cv * 100) + '%</td></tr>' +
+      '<tr><td>Lock-In: weeks with a game / season value</td><td class="num">' + fmt(p.lockWeeks, 1) + ' / ' + fmt(p.lockin, 0) + '</td></tr>' +
       '<tr><td>VORP (replacement ' + fmt(p.repl, 1) + ')</td><td class="num">' + fmt(p.vorp, 1) + '</td></tr>' +
       '</table>' +
       '<div class="row gap" style="margin-top:10px"><label style="margin:0">Your games estimate' + (config.gpOverrides[id] != null ? ' (override on)' : '') +
@@ -872,10 +888,10 @@
   /* ---------------- export ---------------- */
 
   function exportCsv() {
-    var head = ['rank', 'name', 'team', 'pos', 'fpg', 'proj_gp', 'gp_avg', 'season_fp', 'vorp', 'adp', 'adp_minus_rank', 'injury'];
+    var head = ['rank', 'name', 'team', 'pos', 'fpg', 'lockin_per_week', 'swing_cv', 'proj_gp', 'gp_avg', 'season_fp', 'lockin_season', 'vorp', 'adp', 'adp_minus_rank', 'injury'];
     var lines = [head.join(',')].concat(pool.map(function (p) {
       var inj = p.cons && p.cons.injury ? p.cons.injury.summary || p.cons.injury.status : p.injury || '';
-      return [p.rank, '"' + p.name.replace(/"/g, '""') + '"', p.team, p.pos.join('/'), fmt(p.fpg, 2), fmt(p.gp, 0), fmt(p.gpAvg, 0), fmt(p.total, 0), fmt(p.vorp, 1),
+      return [p.rank, '"' + p.name.replace(/"/g, '""') + '"', p.team, p.pos.join('/'), fmt(p.fpg, 2), fmt(p.lockWeekly, 2), fmt(p.cv, 2), fmt(p.gp, 0), fmt(p.gpAvg, 0), fmt(p.total, 0), fmt(p.lockin, 0), fmt(p.vorp, 1),
         p.adp == null ? '' : fmt(p.adp, 1), p.diff == null ? '' : p.diff, '"' + String(inj).replace(/"/g, '""') + '"'].join(',');
     }));
     var blob = new Blob([lines.join('\n')], { type: 'text/csv' });
