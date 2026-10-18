@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Hoops Draft Assistant</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <h1>Hoops Draft Assistant</h1>
+      <span id="leagueName" class="muted">No league loaded</span>
+    </div>
+    <div id="clock" class="clock"></div>
+    <div class="topbar-actions">
+      <label class="toggle"><input type="checkbox" id="liveToggle"> Live sync</label>
+      <button id="refreshBtn" class="btn">Refresh picks</button>
+    </div>
+  </header>
+
+  <div id="status" class="status" role="status"></div>
+
+  <nav class="tabs" role="tablist">
+    <button class="tab active" data-tab="board" role="tab">Board</button>
+    <button class="tab" data-tab="plan" role="tab">Draft plan</button>
+    <button class="tab" data-tab="settings" role="tab">Settings &amp; data</button>
+    <button class="tab" data-tab="help" role="tab">How it works</button>
+  </nav>
+
+  <main>
+    <!-- BOARD -->
+    <section id="tab-board" class="tab-panel active">
+      <div class="board-layout">
+        <div class="board-main">
+          <div class="recs" id="recs"></div>
+          <div class="filters">
+            <div class="pos-filter" id="posFilter">
+              <button class="chip active" data-pos="ALL">All</button>
+              <button class="chip" data-pos="PG">PG</button>
+              <button class="chip" data-pos="SG">SG</button>
+              <button class="chip" data-pos="SF">SF</button>
+              <button class="chip" data-pos="PF">PF</button>
+              <button class="chip" data-pos="C">C</button>
+              <button class="chip" data-pos="NEED">Fits my lineup</button>
+            </div>
+            <input id="search" type="search" placeholder="Search player or team">
+            <select id="sortBy" aria-label="Sort by">
+              <option value="score">Sort: pick-now value</option>
+              <option value="gain">Sort: roster gain</option>
+              <option value="vorp">Sort: VORP</option>
+              <option value="fpg">Sort: fantasy pts / game</option>
+              <option value="total">Sort: season fantasy pts</option>
+              <option value="adp">Sort: Sleeper ADP</option>
+              <option value="diff">Sort: value vs ADP</option>
+            </select>
+            <label class="toggle"><input type="checkbox" id="showDrafted"> Show drafted</label>
+          </div>
+          <div class="table-wrap">
+            <table class="board" id="board">
+              <thead>
+                <tr>
+                  <th title="Our rank by value over replacement">Rk</th>
+                  <th>Player</th>
+                  <th>Pos</th>
+                  <th class="num" title="Projected fantasy points per game in YOUR scoring">FP/G</th>
+                  <th class="num" title="Projected games played">GP</th>
+                  <th class="num" title="Projected season fantasy points">Season</th>
+                  <th class="num" title="Value over replacement (season or per-game, see settings)">VORP</th>
+                  <th class="num" title="How much this player improves YOUR roster right now">Gain</th>
+                  <th class="num" title="Gain adjusted for whether he'd still be there at your next pick">Now</th>
+                  <th class="num" title="Sleeper ADP">ADP</th>
+                  <th class="num" title="ADP rank minus our rank. Positive = market is sleeping on him">+/-</th>
+                  <th class="num" title="Chance he is still available at your next pick">Next</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+        <aside class="board-side">
+          <div class="card">
+            <h2>My team</h2>
+            <div id="myLineup"></div>
+          </div>
+          <div class="card">
+            <h2>My picks</h2>
+            <div id="myPicks" class="pick-list"></div>
+          </div>
+          <div class="card">
+            <h2>Recent picks</h2>
+            <div id="recentPicks" class="pick-feed"></div>
+            <div class="row gap">
+              <button id="undoBtn" class="btn small">Undo last pick</button>
+              <button id="mockBtn" class="btn small">Start mock draft</button>
+            </div>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- PLAN -->
+    <section id="tab-plan" class="tab-panel">
+      <div id="plan"></div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="tab-settings" class="tab-panel">
+      <div class="settings-grid">
+        <div class="card">
+          <h2>1. Sleeper league</h2>
+          <label>League ID <input id="leagueId" type="text" inputmode="numeric"></label>
+          <label>Your Sleeper username (to find your draft slot) <input id="username" type="text"></label>
+          <label>Draft ID (optional; found automatically) <input id="draftId" type="text" inputmode="numeric"></label>
+          <div class="row gap">
+            <button id="loadBtn" class="btn primary">Load from Sleeper</button>
+            <button id="reloadPlayersBtn" class="btn">Re-download player list</button>
+          </div>
+          <p class="muted small">Loads league scoring and roster settings, Sleeper projections and ADP, last season's stats and live draft picks, all straight from your browser.</p>
+        </div>
+
+        <div class="card">
+          <h2>2. Draft setup</h2>
+          <div class="row gap">
+            <label>Teams <input id="teams" type="number" min="2" max="32"></label>
+            <label>My slot <input id="slot" type="number" min="1" max="32"></label>
+            <label>Rounds <input id="rounds" type="number" min="1" max="40"></label>
+          </div>
+          <label>Roster slots <input id="roster" type="text"></label>
+          <label>Scoring (JSON, stat key → points)
+            <textarea id="scoring" rows="5" spellcheck="false"></textarea>
+          </label>
+          <p class="muted small">Filled from your league when you load it. Edit here to try other settings.</p>
+        </div>
+
+        <div class="card">
+          <h2>3. Projection model</h2>
+          <div class="row gap">
+            <label>Projection season <input id="projSeason" type="text"></label>
+            <label>Last-season stats <input id="statsSeason" type="text"></label>
+          </div>
+          <label>Weight on Sleeper projections vs last season: <strong id="projWeightOut"></strong>
+            <input id="projWeight" type="range" min="0" max="100" step="5">
+          </label>
+          <label>Rank by
+            <select id="valueKey">
+              <option value="total">Season fantasy points (rewards durability)</option>
+              <option value="fpg">Fantasy points per game</option>
+            </select>
+          </label>
+          <div class="row gap">
+            <label>Max games <input id="gamesCap" type="number" min="1" max="82"></label>
+            <label>Bench weight <input id="benchWeight" type="number" min="0" max="1" step="0.05"></label>
+          </div>
+          <label>ADP source <select id="adpKey"></select></label>
+          <button id="applyBtn" class="btn primary">Recalculate</button>
+        </div>
+
+        <div class="card">
+          <h2>4. Other stats sources (optional)</h2>
+          <p class="small">Import a CSV of stats from any site (Basketball-Reference, ESPN, Hashtag Basketball, …). It is rescored with <em>your</em> scoring. It should have columns like <code>Player, Pos, Team, G, PTS, TRB, AST, STL, BLK, TOV</code>, plus optionally <code>DD</code>, <code>TD</code>, <code>ADP</code>. Per-game or season totals both work.</p>
+          <label>Use CSV as
+            <select id="csvRole">
+              <option value="stats">Last-season stats (replaces Sleeper stats)</option>
+              <option value="projections">Projections (replaces Sleeper projections)</option>
+            </select>
+          </label>
+          <input id="csvFile" type="file" accept=".csv,.txt,.tsv">
+          <div id="csvResult" class="muted small"></div>
+        </div>
+
+        <div class="card wide">
+          <h2>5. Manual import (if your browser blocks the Sleeper requests)</h2>
+          <p class="small">Open each link in a new tab, copy all the JSON, and paste it into the matching box.</p>
+          <div id="manualLinks" class="small"></div>
+          <div class="row gap wrap">
+            <label class="grow">Players JSON <textarea id="pastePlayers" rows="3" spellcheck="false"></textarea></label>
+            <label class="grow">Projections JSON <textarea id="pasteProj" rows="3" spellcheck="false"></textarea></label>
+            <label class="grow">Last-season stats JSON <textarea id="pasteStats" rows="3" spellcheck="false"></textarea></label>
+            <label class="grow">League JSON <textarea id="pasteLeague" rows="3" spellcheck="false"></textarea></label>
+          </div>
+          <button id="pasteBtn" class="btn primary">Use pasted data</button>
+        </div>
+
+        <div class="card">
+          <h2>Draft board data</h2>
+          <div class="row gap wrap">
+            <button id="exportBtn" class="btn">Export rankings CSV</button>
+            <button id="resetDraftBtn" class="btn danger">Clear all picks</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- HELP -->
+    <section id="tab-help" class="tab-panel">
+      <div class="card prose">
+        <h2>How the numbers work</h2>
+        <p><strong>FP/G</strong> is a projected stat line scored with your league's scoring. The stat line is a blend of Sleeper's season projection and last season's per-game stats; set the mix under <em>Settings</em>. Other sites' fantasy-point totals are never used, only their raw stats.</p>
+        <p><strong>VORP</strong> (value over replacement): every team's 10 starting slots (PG, SG, G, SF, PF, F, C, 3×UTIL) are filled league-wide with the best players. The best player left over at each position sets that position's replacement level. A player's VORP is how far he sits above it. With 3 UTIL slots, 100 starters league-wide decide replacement level.</p>
+        <p><strong>Gain</strong> is how much your roster's value goes up if you draft him now. It uses an optimal lineup of your current players, with bench players counting at the bench weight. Once your C and UTIL spots are full, another center's Gain drops even if his VORP is high.</p>
+        <p><strong>Now</strong> is Gain minus what you'd lose by passing on him, using Sleeper ADP to estimate whether he will still be there at your next pick. Two similar players? Take the one who won't make it back. The top three by this column are shown as recommendations.</p>
+        <p><strong>Next</strong> is the chance a player is still available at your next pick (ADP ± a spread that grows later in the draft).</p>
+        <p><strong>+/-</strong>: ADP rank minus our rank. Big positive numbers are players your scoring likes more than the market does, so you can often wait on them. Negative numbers are players the market will overdraft for your format.</p>
+        <h2>During the draft</h2>
+        <ul>
+          <li><strong>Live sync</strong> polls the Sleeper draft every few seconds and removes drafted players.</li>
+          <li>Offline or a draft on another site? Use <strong>Taken</strong> / <strong>Mine</strong> on each row.</li>
+          <li><strong>Start mock draft</strong> simulates the other 9 teams picking around ADP so you can practise from pick 6.</li>
+        </ul>
+      </div>
+    </section>
+  </main>
+
+  <div id="playerModal" class="modal" hidden>
+    <div class="modal-body">
+      <button class="modal-close" aria-label="Close">×</button>
+      <div id="playerDetail"></div>
+    </div>
+  </div>
+
+  <script src="js/core.js"></script>
+  <script src="js/sleeper.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
