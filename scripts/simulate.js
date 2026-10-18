@@ -87,6 +87,11 @@ const STRATEGIES = {
     });
     return best;
   },
+  // Same as the tool, but never takes a player more than 8 picks before his ADP.
+  'Tool, no reaches (max 8 picks ahead of ADP)': (avail, mine, cur, next) => {
+    const ok = avail.filter(p => effAdp(p) <= cur + 8);
+    return STRATEGIES['Tool (Now: two-pick lookahead)'](ok.length ? ok : avail, mine, cur, next);
+  },
   'Best roster fit (Gain, no lookahead)': (avail, mine) => gains(avail, mine).sort((a, b) => b.g - a.g)[0].p,
   'Best value on board (VORP, ignores roster)': avail => avail.slice().sort((a, b) => b.vorp - a.vorp)[0],
   'Draft by ADP (like everyone else)': avail => avail.slice().sort((a, b) => effAdp(a) - effAdp(b))[0],
@@ -148,6 +153,16 @@ if (process.argv[3] === 'rounds') {
   counts.forEach((c, r) => {
     const top = Object.entries(c).sort((a, b) => b[1] - a[1]).slice(0, 4).map(([n, k]) => n + ' ' + Math.round(100 * k / SIMS) + '%');
     console.log('R' + (r + 1) + ' #' + picks[r].pick + ': ' + top.join(', '));
+  });
+  process.exit(0);
+}
+
+// Head-to-head of named strategies from one slot: `node scripts/simulate.js 1000 compare 6 "<name>" "<name>"`
+if (process.argv[3] === 'compare') {
+  const slot = parseInt(process.argv[4], 10);
+  process.argv.slice(5).forEach(name => {
+    const r = run(slot, name, SIMS);
+    console.log(name + ': ' + r.mean.toFixed(0) + ' ± ' + r.se.toFixed(0));
   });
   process.exit(0);
 }
