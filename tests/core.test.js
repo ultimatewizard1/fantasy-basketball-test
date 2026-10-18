@@ -198,3 +198,13 @@ test('lock-in weeks: known injuries cost whole weeks, scattered absences mostly 
   assert.ok(Math.abs(C.lockInWeeks(48, 34) - (C.LOCKIN_WEEKS - 34 / 3.4)) < 1e-9);
   assert.equal(C.lockInWeeks(0, 82), 0);
 });
+
+test('preseason signal is relative to a typical preseason and only flags extra minutes', () => {
+  // Projected 30 FP/G in 30 min = 36 per 36. Typical preseason runs 10% high.
+  const base = 1.1;
+  assert.equal(C.preseasonSignal({ g: 3, min: 20, fp36: 39.6 }, 30, 30, base).label, '');
+  assert.equal(C.preseasonSignal({ g: 3, min: 20, fp36: 50 }, 30, 30, base).label, 'production up');
+  assert.equal(C.preseasonSignal({ g: 3, min: 20, fp36: 28 }, 30, 30, base).label, 'production down');
+  assert.equal(C.preseasonSignal({ g: 3, min: 34, fp36: 39.6 }, 30, 30, base).label, 'role up');
+  assert.equal(C.preseasonSignal({ g: 1, min: 34, fp36: 60 }, 30, 30, base), null);
+});

@@ -37,15 +37,17 @@ turn on **Live sync** when the draft starts.
 | Sleeper games played, up to 9 seasons | Career durability |
 | ESPN injury report (status, estimated return date) + Sleeper injury fields | Games lost to current injuries |
 | ESPN game logs, last season | Game-to-game swing (Lock-In) |
+| ESPN preseason game logs | Preseason watch list (▲/▼ badges; hints only, not in rankings) |
 | Sleeper `adp_std` | ADP (ESPN ADP optional) |
 
 **Projected games** = 50% × durability × games still available + 50% × the average of the ESPN and
 FantasyPros games projections, capped at games still available. In more detail:
 
 - **Durability** is the career share of scheduled games played (2019-20 and 2020-21 count as
-  72-game seasons). One-off outlier seasons are ignored: a season under 55% of the player's own
-  median, at most a quarter of his seasons. That drops Haliburton's 0-game and Tatum's 16-game
-  years, but chronic absences still count (Embiid, Morant). Each older season counts 15% less,
+  72-game seasons). One-off outlier seasons (under 55% of the player's own median, at most a quarter of his
+  seasons) count at 35% of their normal weight. A single major injury year barely moves the
+  rate, but it still hints at re-injury risk, and chronic absences count fully (Embiid,
+  Morant). Each older season counts 15% less,
   and the result is pulled toward 80% for short careers.
 - **Games still available** = 82 − estimated games missed to a current injury, from the ESPN
   return date or "out for season" flag.

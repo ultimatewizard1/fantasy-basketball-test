@@ -366,6 +366,32 @@
     });
   }
 
+  /*
+   * Preseason vs projection. Starters play short preseason minutes, so
+   * compare production per 36 minutes, and only treat minutes *above*
+   * projection as a signal (a bigger role). Small samples: hints only.
+   * pre: { g, min, fp36 } from ESPN preseason logs; projMin: projected minutes.
+   */
+  function preseasonSignal(pre, fpg, projMin, baseline) {
+    if (!pre || pre.g < 2 || !pre.min || !pre.fp36 || !projMin || !(fpg > 0)) return null;
+    var projFp36 = 36 * fpg / projMin;
+    // Relative to the typical preseason ratio: per-36 runs high in short stints.
+    var rate = pre.fp36 / projFp36 / (baseline || 1) - 1;
+    var minDiff = pre.min - projMin;
+    var label = '';
+    if (minDiff >= 3) label = 'role up';
+    else if (pre.min >= 15 && rate >= 0.2) label = 'production up';
+    else if (pre.min >= 15 && rate <= -0.25) label = 'production down';
+    return { rate: rate, minDiff: minDiff, projFp36: projFp36, label: label };
+  }
+
+  // Median preseason-to-projected per-36 ratio. players: [{ pre, fpg, projMin }]
+  function preseasonBaseline(players) {
+    var r = players.filter(function (x) { return x.pre && x.pre.g >= 2 && x.pre.min >= 15 && x.pre.fp36 && x.projMin && x.fpg > 0; })
+      .map(function (x) { return x.pre.fp36 / (36 * x.fpg / x.projMin); }).sort(function (a, b) { return a - b; });
+    return r.length >= 20 ? r[Math.floor(r.length / 2)] : 1;
+  }
+
   /* ---------------- my roster ---------------- */
 
   // Starters count fully, bench players at benchWeight (they cover off-days/injuries).
@@ -609,6 +635,8 @@
     weeklyLockIn: weeklyLockIn,
     lockInWeeks: lockInWeeks,
     applyLockIn: applyLockIn,
+    preseasonSignal: preseasonSignal,
+    preseasonBaseline: preseasonBaseline,
     LOCKIN_WEEKS: LOCKIN_WEEKS,
     DEFAULT_CV: DEFAULT_CV,
     normalizePositions: normalizePositions,

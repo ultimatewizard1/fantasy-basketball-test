@@ -145,6 +145,13 @@
       if (p.cons && p.cons.injury) missed[p.id] = p.cons.injury.gamesMissed;
     });
     C.applyLockIn(pool, { cv: cv, missed: missed });
+    var preBase = C.preseasonBaseline(pool.map(function (p) {
+      var pre = p.cons && p.cons.preseason;
+      return { pre: pre, fpg: p.fpg, projMin: pre && pre.projMin };
+    }));
+    pool.forEach(function (p) {
+      p.pre = p.cons && p.cons.preseason ? C.preseasonSignal(p.cons.preseason, p.fpg, p.cons.preseason.projMin, preBase) : null;
+    });
     replInfo = pool.length ? C.applyValues(pool, config.roster, config.teams, config.valueKey) : null;
     pool.forEach(function (p) { p.diff = p.adpRank != null ? p.adpRank - p.rank : null; });
   }
@@ -457,7 +464,7 @@
     $('source').value = useConsensus() ? 'consensus' : 'sleeper';
     $('consensusInfo').innerHTML = CONS
       ? 'Bundled consensus built ' + esc(CONS.generated) + ' from ' + esc(CONS.sources.join(', ')) + ' + last season (half weight). ' +
-        'Expected games = 50% career games-played rate (one-off outlier seasons ignored, recent seasons weighted more) + 50% ESPN/FantasyPros expected games, minus games lost to current injuries.'
+        'Expected games = 50% career games-played rate (one-off outlier seasons count at 35% weight, recent seasons weighted more) + 50% ESPN/FantasyPros expected games, minus games lost to current injuries.'
       : 'No bundled consensus found (run <code>python3 scripts/build_consensus.py</code>).';
     $('projWeight').disabled = !!useConsensus();
     $('leagueName').textContent = data.leagueName ? data.leagueName + ' · ' + config.teams + ' teams · slot ' + config.slot : 'No league loaded';
@@ -548,7 +555,7 @@
     else if (p.cons && p.cons.excluded && p.cons.excluded.length) {
       var yr = p.cons.excluded[0];
       var season = (p.cons.career || []).filter(function (s) { return s[0] === yr; })[0];
-      bits.push('ignores outlier ' + seasonLabel(yr) + (season ? ' (' + season[1] + ' GP)' : ''));
+      bits.push('down-weights outlier ' + seasonLabel(yr) + (season ? ' (' + season[1] + ' GP)' : ''));
     } else if (p.gpAvg != null && p.gpAvg < 55) bits.push('averaged ' + fmt(p.gpAvg, 0) + ' GP over 3 seasons');
     if (p.diff != null && p.diff >= 10) bits.push('market undervalues him (+' + p.diff + ')');
     if (gainPct < 0.6) bits.push('limited lineup fit');
@@ -584,13 +591,22 @@
 
   function seasonLabel(y) { return y + '-' + String(y + 1).slice(2); }
 
+  function preseasonBadge(p) {
+    if (!p.pre || !p.pre.label) return '';
+    var up = p.pre.label.indexOf('up') >= 0;
+    var pre = p.cons.preseason;
+    var title = 'Preseason: ' + pre.g + ' games, ' + pre.min + ' min (projected ' + pre.projMin + '), ' + pre.fp36 + ' FP per 36 vs ' +
+      fmt(p.pre.projFp36) + ' projected (' + (p.pre.rate >= 0 ? '+' : '') + Math.round(p.pre.rate * 100) + '% vs a typical preseason). Small sample: a hint, not in the rankings.';
+    return '<span class="pre ' + (up ? 'good' : 'bad') + '" title="' + esc(title) + '">' + (up ? 'PRE▲' : 'PRE▼') + '</span>';
+  }
+
   function gpHistTitle(p) {
     if (!p.cons) return 'Games played last season';
     var c = p.cons.career || [];
     if (!c.length) return 'No NBA games yet';
     var excl = p.cons.excluded || [];
     return 'Games played ' + c.map(function (s) {
-      return seasonLabel(s[0]) + ': ' + s[1] + (excl.indexOf(s[0]) >= 0 ? ' (outlier, ignored)' : '');
+      return seasonLabel(s[0]) + ': ' + s[1] + (excl.indexOf(s[0]) >= 0 ? ' (outlier, 35% weight)' : '');
     }).join(', ');
   }
 
@@ -638,7 +654,7 @@
       return '<tr class="' + cls.join(' ') + '">' +
         '<td>' + p.rank + '</td>' +
         '<td><span class="name" data-detail="' + esc(p.id) + '">' + esc(p.name) + '</span><span class="team">' + esc(p.team) + '</span>' +
-        injuryBadge(p) + '</td>' +
+        injuryBadge(p) + preseasonBadge(p) + '</td>' +
         '<td class="pos">' + esc(p.pos.join('/')) + '</td>' +
         '<td class="num">' + fmt(p.fpg) + '</td>' +
         '<td class="num">' + fmt(p.gp, 0) + '</td>' +
@@ -871,16 +887,18 @@
     var excl = c.excluded || [];
     var careerHtml = (c.career || []).map(function (s) {
       var out = excl.indexOf(s[0]) >= 0;
-      return '<span title="' + (out ? 'Outlier season, ignored' : '') + '" style="' + (out ? 'text-decoration:line-through;opacity:.6' : '') + '">' +
+      return '<span title="' + (out ? 'Outlier season, counted at 35% weight' : '') + '" style="' + (out ? 'text-decoration:line-through;opacity:.6' : '') + '">' +
         seasonLabel(s[0]) + ': ' + s[1] + '</span>';
     }).join(' · ') || 'No NBA games yet';
     var inj = c.injury;
     return '<h3>Projections by source</h3><table class="detail-table"><tr><td class="muted small">Source</td><td class="num muted small">PTS / REB / AST / STL / BLK</td><td class="num muted small">FP/G</td></tr>' + srcRows + '</table>' +
       '<h3>Games</h3><table class="detail-table">' +
-      '<tr><td colspan="2"><span class="muted small">Career games by season (struck through = outlier season, ignored)</span><br>' + careerHtml + '</td></tr>' +
+      '<tr><td colspan="2"><span class="muted small">Career games by season (struck through = outlier season, counted at 35% weight)</span><br>' + careerHtml + '</td></tr>' +
       '<tr><td>Career durability (recent seasons weigh more)</td><td class="num">' + Math.round(c.durability * 100) + '% of games</td></tr>' +
       '<tr><td>Expected-games inputs</td><td class="num">' + esc(gpTxt) + '</td></tr>' +
       '<tr><td><strong>Expected games this season</strong></td><td class="num"><strong>' + fmt(p.gp, 0) + '</strong>' + (config.gpOverrides[p.id] != null ? ' (your override)' : '') + '</td></tr>' +
+      (c.preseason ? '<tr><td>Preseason (' + c.preseason.g + ' g, not in rankings)</td><td class="num">' + c.preseason.min + ' min (proj ' + (c.preseason.projMin || '–') + '), ' +
+        c.preseason.fpg + ' FP/G, ' + c.preseason.fp36 + ' per 36 vs ' + (p.pre ? fmt(p.pre.projFp36) : '–') + ' proj' + (p.pre && p.pre.label ? ' · <strong>' + esc(p.pre.label) + '</strong>' : '') + '</td></tr>' : '') +
       (inj ? '<tr><td>Current injury</td><td class="num bad">' + esc(inj.status) + (inj.gamesMissed ? ', ~' + inj.gamesMissed + ' games missed' : '') + '</td></tr>' : '') +
       '</table>' + (inj && inj.note ? '<p class="small">' + esc(inj.note) + '</p>' : '');
   }

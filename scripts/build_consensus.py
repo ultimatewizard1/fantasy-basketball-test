@@ -42,6 +42,9 @@ SEASON_LENGTH = {2019: 72, 2020: 72}
 # A season under this share of the player's median rate is a one-off outlier
 # (e.g. a single major injury) and is dropped, at most a quarter of seasons.
 OUTLIER_SHARE = 0.55
+# Outlier seasons still count, at this fraction of their normal weight: a major
+# injury year is mostly noise but says something about re-injury risk.
+OUTLIER_WEIGHT = 0.35
 # Prior pulling durability toward a typical regular (~66 games) for small samples.
 GP_PRIOR_WEIGHT = 1.0
 GP_PRIOR_RATE = 0.80
@@ -185,21 +188,22 @@ def game_fp(g):
     return fp
 
 
-def espn_game_fps(espn_id, espn_season):
-    """Fantasy points for each regular-season game in an ESPN game log."""
+def espn_games(espn_id, espn_season, kind='Regular Season'):
+    """[(fantasy points, minutes)] for each game of one season type in an ESPN game log."""
     url = 'https://site.web.api.espn.com/apis/common/v3/sports/basketball/nba/athletes/%s/gamelog?season=%d' % (espn_id, espn_season)
     d = get_json(url)
     names = d.get('names') or []
     idx = {n: i for i, n in enumerate(names)}
     fps = []
     for st in d.get('seasonTypes', []):
-        if 'Regular Season' not in (st.get('displayName') or ''):
+        if kind not in (st.get('displayName') or ''):
             continue
         for cat in st.get('categories', []):
             for ev in cat.get('events', []) or []:
                 s = ev.get('stats') or []
                 try:
-                    if float(s[idx['minutes']] or 0) <= 0:
+                    mins = float(s[idx['minutes']] or 0)
+                    if mins <= 0:
                         continue
                     g = {
                         'pts': float(s[idx['points']]), 'reb': float(s[idx['totalRebounds']]),
@@ -209,8 +213,23 @@ def espn_game_fps(espn_id, espn_season):
                     }
                 except (KeyError, ValueError, IndexError):
                     continue
-                fps.append(game_fp(g))
+                fps.append((game_fp(g), mins))
     return fps
+
+
+def espn_game_fps(espn_id, espn_season):
+    return [fp for fp, _ in espn_games(espn_id, espn_season)]
+
+
+def preseason_line(espn_id, espn_season):
+    """Preseason games, minutes per game, fantasy points per game and per 36 minutes."""
+    games = espn_games(espn_id, espn_season, 'Preseason')
+    if not games:
+        return None
+    mins = sum(m for _, m in games)
+    fp = sum(f for f, _ in games)
+    return {'g': len(games), 'min': round(mins / len(games), 1), 'fpg': round(fp / len(games), 1),
+            'fp36': round(36 * fp / mins, 1) if mins else None}
 
 
 def game_volatility(espn_id, espn_last_season):
@@ -323,9 +342,7 @@ def durability(career):
                 excluded.append(c[0])
     num_, den = 0.0, 0.0
     for i, (yr, gp, rate) in enumerate(career):
-        if yr in excluded:
-            continue
-        w = RECENCY_DECAY ** i
+        w = RECENCY_DECAY ** i * (OUTLIER_WEIGHT if yr in excluded else 1.0)
         num_ += w * rate
         den += w
     rate = (num_ + GP_PRIOR_WEIGHT * GP_PRIOR_RATE) / (den + GP_PRIOR_WEIGHT)
@@ -355,6 +372,7 @@ def main():
     ap.add_argument('--season', default='2026', help='Sleeper season label (2026 = 2026-27)')
     ap.add_argument('--start', default='2026-10-20')
     ap.add_argument('--end', default='2027-04-11')
+    ap.add_argument('--allow-partial', action='store_true', help='write output even if ESPN or FantasyPros failed')
     args = ap.parse_args()
     season = args.season
     start, end = dt.date.fromisoformat(args.start), dt.date.fromisoformat(args.end)
@@ -387,6 +405,10 @@ def main():
     except Exception as e:
         log('  injuries failed: %s' % e)
         injuries = {}
+
+    if (not espn or not fpros) and not args.allow_partial:
+        sys.exit('A projection source failed (see above); not overwriting data/consensus.js. '
+                 'Re-run, or pass --allow-partial to build without it.')
 
     by_name = {}
     for pid, p in players.items():
@@ -476,14 +498,24 @@ def main():
     log('ESPN game logs for %d players (volatility)...' % len(todo))
 
     def vol(r):
+        eid = espn_by_id[r['id']]['espn_id']
         try:
-            return r, game_volatility(espn_by_id[r['id']]['espn_id'], espn_last)
-        except Exception as e:  # one failed log shouldn't sink the build
-            return r, (None, 0)
+            v = game_volatility(eid, espn_last)
+        except Exception:  # one failed log shouldn't sink the build
+            v = (None, 0)
+        try:
+            pre = preseason_line(eid, espn_last + 1)
+        except Exception:
+            pre = None
+        return r, v, pre
     with ThreadPoolExecutor(max_workers=12) as ex:
-        for r, (cv, n) in ex.map(vol, todo):
+        for r, (cv, n), pre in ex.map(vol, todo):
             r['cv'] = round(cv, 3) if cv else None
             r['logGames'] = n
+            if pre:
+                mins = [m for m in [r['sources'].get('espn', {}).get('min'), r['sources'].get('fantasypros', {}).get('min')] if m]
+                pre['projMin'] = round(sum(mins) / len(mins), 1) if mins else None
+                r['preseason'] = pre
     have = [r['cv'] for r in rows if r.get('cv')]
     log('  volatility for %d players, median CV %.2f' % (len(have), sorted(have)[len(have) // 2] if have else 0))
 

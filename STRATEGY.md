@@ -87,12 +87,12 @@ be locked. The tool's default ranking (**Lock-In**) is built for this:
 
 What that means for the draft:
 1. **Durability matters less than in standard leagues.** A star who plays 55–60 games but shows
-   up most weeks is fine. Anthony Davis climbs to #11 and Embiid to #53, about his ADP. Players
-   who miss **long stretches** still hurt: Morant ranks #110 against ADP 48, Zion #83 against 51.
+   up most weeks is fine. Anthony Davis climbs to #14 and Embiid to #55, about his ADP. Players
+   who miss **long stretches** still hurt: Morant ranks #107 against ADP 48, Zion #86 against 51.
 2. **Upside beats consistency.** A streaky player with the same average is worth more, because
    you lock his big game and skip the dud. Big men are the streakiest (blocks and boards swing a
    lot): Kel'el Ware, Zach Edey and Jakob Poeltl have ~50% swing and all move up. Very steady
-   players lose a little: SGA (24%) drops to #7 and Amen Thompson (25%) to #37.
+   players lose a little: SGA (24%) drops to #7 and Amen Thompson (25%) to #33.
 3. **Games per week stop mattering.** Don't pay for 4-game weeks or chase schedule streams.
 4. **Your 3 IR slots** accept Out, Suspended and DNR players. An injured player only costs you a
    roster spot once he's healthy. That makes late-round stashes of long-term injured players
@@ -118,48 +118,50 @@ above ~45; otherwise pass.
 
 Numbers come from the bundled consensus (Sleeper/Rotowire + ESPN + FantasyPros, plus last
 season). **Expected games** blend the player's career games-played rate (one-off outlier
-seasons ignored, recent seasons weighted more) with ESPN/FantasyPros expected games, minus
+seasons count at 35% weight, recent seasons weighted more) with ESPN/FantasyPros expected games, minus
 current injuries. **Lock/wk** is the expected locked score per week. "% there" is the chance a
-player is still available at that pick, from Sleeper ADP. Full tables are in
+player is still available at that pick, from Sleeper ADP. Full tables, including a **preseason watch list** (hints only, not in the rankings), are in
 [CHEATSHEET.md](CHEATSHEET.md).
 
-| Player | Career games (recent first; * = outlier ignored) | Expected games | Lock-In rank / ADP |
+| Player | Career games (recent first; * = outlier, counted at 35% weight) | Expected games | Lock-In rank / ADP |
 |---|---|---:|---|
-| Tyrese Haliburton | 0* 73 68 56 77 | 68 | 23 / 18 |
-| Jayson Tatum | 16* 72 74 74 76 64 66 79 80 | 72 | 5 / 11 |
-| Domantas Sabonis | 19* 70 81 79 62 62 62 74 74 | 72 | 9 / 28 |
-| Giannis Antetokounmpo | 36* 67 73 63 67 61 63 72 75 | 69 | 4 / 7 |
-| Anthony Davis | 20* 51 75 56 40 36 62 56 75 | 62 | 11 / 15 |
-| Joel Embiid | 38 19* 39 66 68 51 51 64 63 | 56 | 53 / 56 |
-| Ja Morant | 20 50 9* 61 57 63 67 | 61 | 110 / 48 |
+| Tyrese Haliburton | 0* 73 68 56 77 | 65 | 26 / 18 |
+| Jayson Tatum | 16* 72 74 74 76 64 66 79 80 | 71 | 6 / 11 |
+| Domantas Sabonis | 19* 70 81 79 62 62 62 74 74 | 70 | 10 / 28 |
+| Giannis Antetokounmpo | 36* 67 73 63 67 61 63 72 75 | 68 | 4 / 7 |
+| Anthony Davis | 20* 51 75 56 40 36 62 56 75 | 61 | 14 / 15 |
+| Joel Embiid | 38 19* 39 66 68 51 51 64 63 | 55 | 55 / 56 |
+| Ja Morant | 20 50 9* 61 57 63 67 | 60 | 107 / 48 |
 
 **Pick 6.** Take **Giannis** if he's there (41.5 locked/wk, 77% there). Otherwise **Jayson
-Tatum** and **Jalen Johnson** are a dead heat in Lock-In: Tatum 36.2/wk over ~72 games, Johnson
-38.0/wk over ~67 games, a higher ceiling but less durable. Take **Tatum** at 6, because Johnson
+Tatum** and **Jalen Johnson** are a dead heat in Lock-In: Tatum 36.2/wk over ~71 games, Johnson
+38.0/wk over ~66 games, a higher ceiling but less durable. Take **Tatum** at 6, because Johnson
 has a ~50% chance of reaching #15 and Tatum only ~10%. If Tatum's Achilles worries you, take
 Johnson. **Cade Cunningham** (47% there) and **SGA** (31%) are close behind.
 
-**Pick 15.** **Domantas Sabonis** (rank 9, ADP 28, almost certainly there) or **Anthony Davis**
-(rank 11, ADP 15, ~60% there). **Josh Giddey** (rank 12) is ~93% likely to last to #26, so wait
-on him. **Cooper Flagg** (rank 14, 68% there) is the other option.
+**Pick 15.** **Domantas Sabonis** (rank 10, ADP 28, almost certainly there), **Anthony Davis**
+(rank 14, ADP 15, ~60% there) or **Cooper Flagg** (rank 13, 68% there). Sabonis has a ~60% chance
+of lasting to #26, and he had a quiet preseason (2 games, well below his projected production
+per minute). So the lower-risk play is Davis or Flagg at 15, then Sabonis at 26 if he's there.
+**Josh Giddey** (rank 11) is ~93% likely to last to #26, so wait on him.
 
-**Picks 26 and 35.** Take two of **Josh Giddey**, **Bam Adebayo** (16), **Jalen Duren** (20, ADP 48),
-**Deni Avdija** (22), **James Harden** (26) and **Walker Kessler** (27, ADP 59).
+**Picks 26 and 35.** Take two of **Josh Giddey**, **Bam Adebayo** (16), **Jalen Duren** (21, ADP 48),
+**Deni Avdija** (22), **James Harden** (24) and **Walker Kessler** (34, ADP 59).
 
 **Picks 46 and 55: centers slide, and the streaky ones are worth more here.** Targets:
-- **Donovan Clingan**: rank 30, ADP 93
-- **Kel'el Ware**: rank 40, ADP 76, the most boom-or-bust big
-- **Rudy Gobert**: rank 45, ADP 84
-- **Damian Lillard**: rank 50, ADP 147
-- **Joel Embiid**: rank 53, ADP 56. Fine in Lock-In: he only has to play once a week.
+- **Donovan Clingan**: rank 29, ADP 93
+- **Kel'el Ware**: rank 41, ADP 76, the most boom-or-bust big
+- **Rudy Gobert**: rank 46, ADP 84
+- **Damian Lillard**: rank 52, ADP 147
+- **Joel Embiid**: rank 55, ADP 56. Fine in Lock-In: he only has to play once a week.
 
 In later rounds, **Zach Edey** (ADP 101) and **Jakob Poeltl** (ADP 118) are high-swing bigs.
 
 **Let someone else draft these at their ADP:**
-- Ja Morant, ADP 48 [rank 110]
-- Zion Williamson, ADP 51 [83]
-- Kristaps Porziņģis, ADP 89 [142]
-- Paul George, ADP 86 [98]
+- Ja Morant, ADP 48 [rank 107]
+- Zion Williamson, ADP 51 [86]
+- Kristaps Porziņģis, ADP 89 [147]
+- Paul George, ADP 86 [99]
 - Jimmy Butler, ADP 68: out until ~January. An IR stash only in the last rounds.
 - Shaedon Sharpe, Mark Williams, Donte DiVincenzo: out for months. Late IR stashes at most.
 
