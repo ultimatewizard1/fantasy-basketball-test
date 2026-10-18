@@ -9,7 +9,7 @@
   var DEFAULT_CONFIG = {
     leagueId: '1414370391324950528',
     username: '',
-    draftId: '',
+    draftId: '1414370392553881600',
     teams: 10,
     slot: 6,
     rounds: 13,
@@ -19,10 +19,14 @@
     statsSeason: '',
     projWeight: 0.6,
     valueKey: 'total',
-    gamesCap: 78,
+    gamesCap: 82,
     benchWeight: 0.3,
-    adpKey: ''
+    adpKey: '',
+    // 'consensus' = bundled data/consensus.js; 'sleeper' = live Sleeper projections.
+    source: 'consensus',
+    gpOverrides: {}
   };
+  var CONS = window.CONSENSUS || null;
 
   var config = Object.assign({}, DEFAULT_CONFIG, load(LS.config) || {});
   var data = load(LS.data) || { projections: {}, stats: {}, players: {}, csv: null, leagueName: '', sources: {} };
@@ -81,7 +85,34 @@
 
   /* ---------------- model ---------------- */
 
+  function useConsensus() { return config.source === 'consensus' && CONS; }
+
+  function rebuildConsensus() {
+    var proj = {}, games = {}, adp = {}, meta = {};
+    var byId = {};
+    CONS.players.forEach(function (r) {
+      byId[r.id] = r;
+      proj[r.id] = Object.assign({ gp: 1 }, r.line);
+      games[r.id] = config.gpOverrides[r.id] != null ? config.gpOverrides[r.id] : r.gp;
+      if (config.adpKey === 'espn' && r.espnAdp) adp[r.id] = r.espnAdp;
+      else if (config.adpKey === 'sleeper' && r.adp) adp[r.id] = r.adp;
+      meta[r.id] = {
+        full_name: r.name, team: r.team, fantasy_positions: r.pos,
+        injury_status: r.injury ? r.injury.status : ''
+      };
+    });
+    pool = C.buildPool({ players: meta, projections: proj, stats: {}, adp: adp, games: games }, {
+      scoring: config.scoring, projWeight: 1, gamesCap: config.gamesCap
+    });
+    pool.forEach(function (p) { p.cons = byId[p.id]; p.gpAvg = p.cons.gpAvg; });
+  }
+
   function rebuild() {
+    if (useConsensus()) {
+      rebuildConsensus();
+      finishRebuild();
+      return;
+    }
     var proj = data.projections || {};
     var stats = data.stats || {};
     var adp = {};
@@ -94,11 +125,16 @@
     if (config.adpKey === 'csv' && data.csv) adp = data.csv.adp || {};
     else if (config.adpKey && config.adpKey !== 'none') adp = C.extractAdp(data.projections || {}, config.adpKey);
 
-    pool = C.buildPool({ players: allPlayers, projections: proj, stats: stats, adp: adp }, {
+    pool = C.buildPool({ players: allPlayers, projections: proj, stats: stats, adp: adp, games: config.gpOverrides }, {
       scoring: config.scoring,
       projWeight: config.projWeight,
       gamesCap: config.gamesCap
     });
+    pool.forEach(function (p) { p.gpAvg = p.lastGp; });
+    finishRebuild();
+  }
+
+  function finishRebuild() {
     poolById = {};
     pool.forEach(function (p) { poolById[p.id] = p; });
     replInfo = pool.length ? C.applyValues(pool, config.roster, config.teams, config.valueKey) : null;
@@ -106,7 +142,14 @@
   }
 
   function adpOptions() {
-    var opts = C.adpKeys(data.projections || {});
+    if (useConsensus()) {
+      return [
+        { value: 'sleeper', label: 'Sleeper ADP (adp_std, bundled ' + CONS.generated + ')' },
+        { value: 'espn', label: 'ESPN ADP (bundled)' },
+        { value: 'none', label: 'None (use our rank as a proxy)' }
+      ];
+    }
+    var opts = C.adpKeys(data.projections || {}).filter(function (o) { return o.key !== 'adp_dynasty'; });
     var list = opts.map(function (o) { return { value: o.key, label: 'Sleeper ' + o.key + ' (' + o.count + ' players)' }; });
     if (data.csv && data.csv.adp && Object.keys(data.csv.adp).length) list.push({ value: 'csv', label: 'ADP column from CSV' });
     list.push({ value: 'none', label: 'None (use our rank as a proxy)' });
@@ -186,7 +229,9 @@
     available.forEach(function (p) { p.score = p.gain; });
     cands.forEach(function (p, i) { p.score = p.gain - (eAll - expectedBest(i)); });
 
-    var recs = available.slice().sort(function (a, b) { return b.score - a.score; }).slice(0, 3);
+    // Before my turn, only recommend players with a real chance of reaching my pick.
+    var recPool = onClock ? available : available.filter(function (p) { return p.next == null || p.next >= 0.3; });
+    var recs = recPool.sort(function (a, b) { return b.score - a.score; }).slice(0, 3);
     derived = {
       drafted: drafted, mine: mine, mineOther: mineOther, available: available, base: base,
       cur: cur, up: up, onClock: onClock, decision: decision, following: following, recs: recs
@@ -282,11 +327,12 @@
       data.myUserId = me ? me.user_id : null;
       setStatus('Loading draft and player data…');
       var draftP = config.draftId ? Sleeper.draft(config.draftId).catch(function () { return null; }) : Promise.resolve(null);
+      var live = !useConsensus();
       return Promise.all([
         draftP,
         Sleeper.players(false).catch(function (e) { notes.push('player list failed (' + esc(e.message) + ')'); return null; }),
-        Sleeper.projections(config.projSeason).catch(function (e) { notes.push('projections unavailable (' + esc(e.message) + ')'); return null; }),
-        Sleeper.stats(config.statsSeason).catch(function (e) { notes.push('last-season stats unavailable (' + esc(e.message) + ')'); return null; })
+        live ? Sleeper.projections(config.projSeason).catch(function (e) { notes.push('projections unavailable (' + esc(e.message) + ')'); return null; }) : null,
+        live ? Sleeper.stats(config.statsSeason).catch(function (e) { notes.push('last-season stats unavailable (' + esc(e.message) + ')'); return null; }) : null
       ]);
     }).then(function (r) {
       if (!r) return;
@@ -309,9 +355,10 @@
       rebuild();
       saveAll();
       populateSettingsForm();
-      var msg = 'Loaded ' + esc(data.leagueName) + ': ' + pool.length + ' players valued, ' +
-        Object.keys(data.projections).length + ' projections, ' + Object.keys(data.stats).length + ' stat lines' +
-        (config.adpKey && config.adpKey !== 'none' ? ', ADP from ' + esc(config.adpKey) : ', no ADP found') + '.';
+      var msg = 'Loaded ' + esc(data.leagueName) + ': ' + pool.length + ' players valued' +
+        (useConsensus() ? ' from the bundled consensus (' + esc(CONS.sources.join(', ')) + ', built ' + esc(CONS.generated) + ')'
+          : ', ' + Object.keys(data.projections).length + ' projections, ' + Object.keys(data.stats).length + ' stat lines') +
+        (config.adpKey && config.adpKey !== 'none' ? ', ADP: ' + esc(config.adpKey) : ', no ADP found') + '.';
       if (notes.length) msg += ' <span class="warnc">Note: ' + notes.join('; ') + '.</span>';
       setStatus(msg, pool.length ? 'ok' : 'err');
       if (config.draftId) return syncPicks(true);
@@ -399,6 +446,12 @@
     sel.innerHTML = adpOptions().map(function (o) {
       return '<option value="' + esc(o.value) + '"' + (o.value === config.adpKey ? ' selected' : '') + '>' + esc(o.label) + '</option>';
     }).join('');
+    $('source').value = useConsensus() ? 'consensus' : 'sleeper';
+    $('consensusInfo').innerHTML = CONS
+      ? 'Bundled consensus built ' + esc(CONS.generated) + ' from ' + esc(CONS.sources.join(', ')) + ' + last season (half weight). ' +
+        'Games = 50% three-season games-played history (weighted 3:2:1, adjusted for current injuries) + 50% the sources\' own games projections.'
+      : 'No bundled consensus found (run <code>python3 scripts/build_consensus.py</code>).';
+    $('projWeight').disabled = !!useConsensus();
     $('leagueName').textContent = data.leagueName ? data.leagueName + ' · ' + config.teams + ' teams · slot ' + config.slot : 'No league loaded';
     renderManualLinks();
   }
@@ -422,6 +475,8 @@
     var bw = parseFloat($('benchWeight').value);
     config.benchWeight = isFinite(bw) ? Math.max(0, Math.min(1, bw)) : config.benchWeight;
     config.adpKey = $('adpKey').value || config.adpKey;
+    var src = $('source').value;
+    if (src !== config.source) { config.source = src; config.adpKey = ''; ensureAdpKey(); }
   }
 
   function renderManualLinks() {
@@ -441,7 +496,7 @@
 
   function render() {
     if (!pool.length) {
-      $('board').querySelector('tbody').innerHTML = '<tr><td colspan="13" class="muted">No player data yet. Go to <strong>Settings &amp; data</strong> and click <strong>Load from Sleeper</strong>.</td></tr>';
+      $('board').querySelector('tbody').innerHTML = '<tr><td colspan="14" class="muted">No player data yet. Go to <strong>Settings &amp; data</strong> and click <strong>Load from Sleeper</strong>.</td></tr>';
       $('recs').innerHTML = '';
       renderSide();
       renderClock();
@@ -480,21 +535,44 @@
     var gainPct = derived.recs[0] && derived.recs[0].gain > 0 ? p.gain / derived.recs[0].gain : 1;
     bits.push(fmt(p.fpg) + ' FP/G, ' + fmt(p.gp, 0) + ' GP');
     bits.push('VORP ' + fmt(p.vorp, 0));
-    if (p.next != null) bits.push(pct(p.next) + ' to last to your next pick');
+    if (p.next != null) bits.push(pct(p.next) + (derived.onClock ? ' to last to your next pick' : ' chance he is there at #' + derived.decision));
+    if (p.cons && p.cons.injury && p.cons.injury.gamesMissed >= 3) bits.push('injury: ~' + p.cons.injury.gamesMissed + ' games missed');
+    else if (p.gpAvg != null && p.gpAvg < 55) bits.push('averaged ' + fmt(p.gpAvg, 0) + ' GP over 3 seasons');
     if (p.diff != null && p.diff >= 10) bits.push('market undervalues him (+' + p.diff + ')');
     if (gainPct < 0.6) bits.push('limited lineup fit');
-    if (p.injury) bits.push('injury: ' + p.injury);
+    if (p.injury && !(p.cons && p.cons.injury && p.cons.injury.gamesMissed >= 3)) bits.push('status: ' + p.injury);
     return bits.join(' · ');
   }
 
   function renderRecs() {
-    var labels = ['Best pick now', 'Alternative', 'Alternative'];
+    var labels = derived.onClock ? ['Best pick now', 'Alternative', 'Alternative'] : ['Top target if there', 'Target', 'Target'];
     $('recs').innerHTML = derived.recs.map(function (p, i) {
       return '<div class="rec-card' + (i === 0 ? ' top' : '') + '">' +
         '<div class="label">' + labels[i] + (derived.onClock ? '' : ' (at #' + (derived.decision || '–') + ')') + '</div>' +
         '<div class="who" data-detail="' + esc(p.id) + '">' + esc(p.name) + ' <span class="pos">' + esc(p.pos.join('/')) + ' · ' + esc(p.team) + '</span></div>' +
         '<div class="why">' + esc(whyText(p)) + '</div></div>';
     }).join('');
+  }
+
+  function injuryBadge(p) {
+    var inj = p.cons && p.cons.injury;
+    var status = (inj && inj.status) || p.injury;
+    if (!status) return '';
+    var s = status.toLowerCase();
+    var label = s.indexOf('out') >= 0 ? 'OUT' : s.indexOf('day') >= 0 ? 'DTD' : s.indexOf('susp') >= 0 ? 'SUSP' : status.toUpperCase().slice(0, 4);
+    if (inj && inj.gamesMissed >= 82) label = 'OFS';
+    else if (inj && inj.gamesMissed >= 3) label += ' ~' + inj.gamesMissed + 'g';
+    var title = inj ? [inj.summary, inj.note].filter(Boolean).join(': ') : status;
+    return '<span class="inj" title="' + esc(title) + '">' + esc(label) + '</span>';
+  }
+
+  function gpHistTitle(p) {
+    if (!p.cons) return 'Games played last season';
+    var yrs = CONS.gpHistorySeasons || [];
+    return 'Games played ' + p.cons.gpHist.map(function (g, i) {
+      var y = yrs[i];
+      return (y ? y + '-' + String(y + 1).slice(2) : '') + ': ' + (g == null ? 'not in NBA' : g);
+    }).join(', ');
   }
 
   function fitsLineup(p) { return p.gain > 0.5 * Math.max(p.vorp, 0) && p.gain > 0; }
@@ -541,10 +619,11 @@
       return '<tr class="' + cls.join(' ') + '">' +
         '<td>' + p.rank + '</td>' +
         '<td><span class="name" data-detail="' + esc(p.id) + '">' + esc(p.name) + '</span><span class="team">' + esc(p.team) + '</span>' +
-        (p.injury ? '<span class="inj">' + esc(p.injury.toUpperCase()) + '</span>' : '') + '</td>' +
+        injuryBadge(p) + '</td>' +
         '<td class="pos">' + esc(p.pos.join('/')) + '</td>' +
         '<td class="num">' + fmt(p.fpg) + '</td>' +
         '<td class="num">' + fmt(p.gp, 0) + '</td>' +
+        '<td class="num ' + (p.gpAvg != null && p.gpAvg < 55 ? 'bad' : '') + '" title="' + esc(gpHistTitle(p)) + '">' + fmt(p.gpAvg, 0) + '</td>' +
         '<td class="num">' + fmt(p.total, 0) + '</td>' +
         '<td class="num">' + fmt(p.vorp, config.valueKey === 'fpg' ? 1 : 0) + '</td>' +
         '<td class="num">' + (d ? '–' : fmt(p.gain, config.valueKey === 'fpg' ? 1 : 0)) + '</td>' +
@@ -554,7 +633,7 @@
         '<td class="num ' + nextCls + '">' + (d ? '–' : pct(p.next)) + '</td>' +
         '<td><div class="actions">' + actions + '</div></td></tr>';
     }).join('');
-    $('board').querySelector('tbody').innerHTML = html || '<tr><td colspan="13" class="muted">No players match.</td></tr>';
+    $('board').querySelector('tbody').innerHTML = html || '<tr><td colspan="14" class="muted">No players match.</td></tr>';
   }
 
   function renderSide() {
@@ -732,11 +811,18 @@
       '<table class="detail-table">' +
       '<tr><td>Our rank / ADP</td><td class="num">' + p.rank + ' / ' + fmt(p.adp) + '</td></tr>' +
       '<tr><td>Blended FP/G (your scoring)</td><td class="num"><strong>' + fmt(p.fpg, 2) + '</strong></td></tr>' +
-      '<tr><td>Sleeper projection FP/G</td><td class="num">' + fmt(p.projFpg, 2) + '</td></tr>' +
-      '<tr><td>Last season FP/G</td><td class="num">' + fmt(p.lastFpg, 2) + (p.lastGp ? ' (' + p.lastGp + ' GP)' : '') + '</td></tr>' +
+      (p.cons ? '' :
+        '<tr><td>Sleeper projection FP/G</td><td class="num">' + fmt(p.projFpg, 2) + '</td></tr>' +
+        '<tr><td>Last season FP/G</td><td class="num">' + fmt(p.lastFpg, 2) + (p.lastGp ? ' (' + p.lastGp + ' GP)' : '') + '</td></tr>') +
       '<tr><td>Projected games / season FP</td><td class="num">' + fmt(p.gp, 0) + ' / ' + fmt(p.total, 0) + '</td></tr>' +
       '<tr><td>VORP (replacement ' + fmt(p.repl, 1) + ')</td><td class="num">' + fmt(p.vorp, 1) + '</td></tr>' +
-      '</table><h3>Where his points come from (per game)</h3><table class="detail-table">' +
+      '</table>' +
+      '<div class="row gap" style="margin-top:10px"><label style="margin:0">Your games estimate' + (config.gpOverrides[id] != null ? ' (override on)' : '') +
+      ' <input id="gpOverride" type="number" min="0" max="82" value="' + fmt(p.gp, 0) + '"></label>' +
+      '<button class="btn small" data-gp-save="' + esc(id) + '">Save</button>' +
+      (config.gpOverrides[id] != null ? '<button class="btn small" data-gp-clear="' + esc(id) + '">Reset</button>' : '') + '</div>' +
+      consensusDetail(p) +
+      '<h3>Where his points come from (per game)</h3><table class="detail-table">' +
       parts.map(function (b) {
         var w = Math.round(120 * Math.abs(b.points) / maxAbs);
         return '<tr><td>' + esc(b.label) + '</td><td class="num">' + fmt(b.value, 2) + '</td><td class="num">' + (b.points >= 0 ? '+' : '') + fmt(b.points, 2) +
@@ -746,13 +832,37 @@
     $('playerModal').hidden = false;
   }
 
+  var SOURCE_LABELS = { sleeper: 'Sleeper (Rotowire)', espn: 'ESPN', fantasypros: 'FantasyPros consensus', last: 'Last season actual (½ weight)' };
+
+  function consensusDetail(p) {
+    var c = p.cons;
+    if (!c) return '';
+    var sc = C.cleanScoring(config.scoring);
+    var srcRows = Object.keys(c.sources).map(function (k) {
+      var l = c.sources[k];
+      return '<tr><td>' + esc(SOURCE_LABELS[k] || k) + '</td><td class="num">' + fmt(l.pts) + ' / ' + fmt(l.reb) + ' / ' + fmt(l.ast) + ' / ' + fmt(l.stl) + ' / ' + fmt(l.blk) +
+        '</td><td class="num"><strong>' + fmt(C.fantasyPoints(C.estimateBonuses(l), sc), 1) + '</strong></td></tr>';
+    }).join('');
+    var g = c.gpSources;
+    var gpTxt = 'History-based ' + fmt(g.history, 0) + (g.espn ? ', ESPN ' + g.espn : '') + (g.fantasypros ? ', FantasyPros ' + g.fantasypros : '');
+    var inj = c.injury;
+    return '<h3>Projections by source</h3><table class="detail-table"><tr><td class="muted small">Source</td><td class="num muted small">PTS / REB / AST / STL / BLK</td><td class="num muted small">FP/G</td></tr>' + srcRows + '</table>' +
+      '<h3>Games</h3><table class="detail-table">' +
+      '<tr><td>Games played, last 3 seasons</td><td class="num">' + esc(gpHistTitle(p).replace('Games played ', '')) + '</td></tr>' +
+      '<tr><td>Durability rate (weighted, shrunk to 80%)</td><td class="num">' + Math.round(c.durability * 100) + '%</td></tr>' +
+      '<tr><td>Games projections</td><td class="num">' + esc(gpTxt) + '</td></tr>' +
+      (inj ? '<tr><td>Current injury</td><td class="num bad">' + esc(inj.status) + (inj.gamesMissed ? ', ~' + inj.gamesMissed + ' games missed' : '') + '</td></tr>' : '') +
+      '</table>' + (inj && inj.note ? '<p class="small">' + esc(inj.note) + '</p>' : '');
+  }
+
   /* ---------------- export ---------------- */
 
   function exportCsv() {
-    var head = ['rank', 'name', 'team', 'pos', 'fpg', 'gp', 'season_fp', 'vorp', 'adp', 'adp_minus_rank', 'proj_fpg', 'last_fpg'];
+    var head = ['rank', 'name', 'team', 'pos', 'fpg', 'proj_gp', 'gp_avg', 'season_fp', 'vorp', 'adp', 'adp_minus_rank', 'injury'];
     var lines = [head.join(',')].concat(pool.map(function (p) {
-      return [p.rank, '"' + p.name.replace(/"/g, '""') + '"', p.team, p.pos.join('/'), fmt(p.fpg, 2), fmt(p.gp, 0), fmt(p.total, 0), fmt(p.vorp, 1),
-        p.adp == null ? '' : fmt(p.adp, 1), p.diff == null ? '' : p.diff, fmt(p.projFpg, 2), fmt(p.lastFpg, 2)].join(',');
+      var inj = p.cons && p.cons.injury ? p.cons.injury.summary || p.cons.injury.status : p.injury || '';
+      return [p.rank, '"' + p.name.replace(/"/g, '""') + '"', p.team, p.pos.join('/'), fmt(p.fpg, 2), fmt(p.gp, 0), fmt(p.gpAvg, 0), fmt(p.total, 0), fmt(p.vorp, 1),
+        p.adp == null ? '' : fmt(p.adp, 1), p.diff == null ? '' : p.diff, '"' + String(inj).replace(/"/g, '""') + '"'].join(',');
     }));
     var blob = new Blob([lines.join('\n')], { type: 'text/csv' });
     var a = document.createElement('a');
@@ -789,6 +899,14 @@
         if (t.dataset.mine) runMockOpponents();
         saveAll();
         render();
+        return;
+      }
+      if (t.dataset.gpSave || t.dataset.gpClear) {
+        var gid = t.dataset.gpSave || t.dataset.gpClear;
+        var v = parseFloat($('gpOverride').value);
+        if (t.dataset.gpSave && isFinite(v)) config.gpOverrides[gid] = Math.max(0, Math.min(82, v));
+        else delete config.gpOverrides[gid];
+        rebuild(); saveAll(); render(); showDetail(gid);
         return;
       }
       var d = t.closest('[data-detail]');
@@ -856,9 +974,9 @@
   /* ---------------- boot ---------------- */
 
   bind();
-  var hasData = Object.keys(data.projections || {}).length || Object.keys(data.stats || {}).length || data.csv;
+  var hasData = useConsensus() || Object.keys(data.projections || {}).length || Object.keys(data.stats || {}).length || data.csv;
   if (hasData) {
-    if (!Object.keys(players).length) {
+    if (!Object.keys(players).length && !useConsensus()) {
       Sleeper.players(false).then(function (pl) { players = pl; rebuild(); populateSettingsForm(); render(); }).catch(function () {});
     }
     ensureAdpKey();

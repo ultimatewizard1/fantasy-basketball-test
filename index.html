@@ -64,7 +64,8 @@
                   <th>Player</th>
                   <th>Pos</th>
                   <th class="num" title="Projected fantasy points per game in YOUR scoring">FP/G</th>
-                  <th class="num" title="Projected games played">GP</th>
+                  <th class="num" title="Projected games: games-played history + source projections, minus games lost to current injuries">GP</th>
+                  <th class="num" title="Average games played over the last 3 seasons (hover a value for each season)">3y GP</th>
                   <th class="num" title="Projected season fantasy points">Season</th>
                   <th class="num" title="Value over replacement (season or per-game, see settings)">VORP</th>
                   <th class="num" title="How much this player improves YOUR roster right now">Gain</th>
@@ -136,6 +137,13 @@
 
         <div class="card">
           <h2>3. Projection model</h2>
+          <label>Projection source
+            <select id="source">
+              <option value="consensus">Bundled consensus: Sleeper + ESPN + FantasyPros, injury-adjusted games (recommended)</option>
+              <option value="sleeper">Live Sleeper projections + last season</option>
+            </select>
+          </label>
+          <p id="consensusInfo" class="muted small"></p>
           <div class="row gap">
             <label>Projection season <input id="projSeason" type="text"></label>
             <label>Last-season stats <input id="statsSeason" type="text"></label>
@@ -220,6 +228,7 @@
     </div>
   </div>
 
+  <script src="data/consensus.js"></script>
   <script src="js/core.js"></script>
   <script src="js/sleeper.js"></script>
   <script src="js/app.js"></script>

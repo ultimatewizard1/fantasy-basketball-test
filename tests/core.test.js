@@ -149,3 +149,33 @@ test('mock pick favours low ADP', () => {
   for (let i = 0; i < 200; i++) if (C.mockPick(avail, 1, rand).id === 'a') aCount++;
   assert.ok(aCount > 180);
 });
+
+test('Sleeper per-game projections (gp = 1) are detected and need a games source', () => {
+  const proj = {};
+  for (let i = 0; i < 20; i++) proj[i] = { gp: 1, pts: 10 + i, reb: 5 };
+  assert.equal(C.looksPerGame(proj), true);
+  const players = Object.fromEntries(Object.keys(proj).map(id => [id, { full_name: 'P' + id, fantasy_positions: ['C'] }]));
+  const pool = C.buildPool({ players, projections: proj, stats: {}, games: { 0: 70 } }, { scoring: { pts: 0.5, reb: 1 }, projWeight: 1, defaultGames: 65 });
+  const p0 = pool.find(p => p.id === '0');
+  assert.equal(p0.fpg, 10);
+  assert.equal(p0.gp, 70);
+  assert.equal(p0.total, 700);
+  assert.equal(pool.find(p => p.id === '1').gp, 65);
+});
+
+test('bonus flags in season stats are ignored and 40/50-point games are estimated', () => {
+  assert.equal(C.toPerGame({ gp: 50, pts: 1000, bonus_pt_40p: 1 }).bonus_pt_40p, undefined);
+  const star = C.estimateBonuses({ pts: 32 });
+  const role = C.estimateBonuses({ pts: 12 });
+  assert.ok(star.bonus_pt_40p > 0.1 && star.bonus_pt_40p < 0.3);
+  assert.ok(star.bonus_pt_50p < star.bonus_pt_40p);
+  assert.ok(role.bonus_pt_40p < 1e-4);
+});
+
+test('missing stats are filled from the other source before blending', () => {
+  const players = { a: { full_name: 'A', fantasy_positions: ['PG'] } };
+  const pool = C.buildPool({ players, projections: { a: { gp: 1, pts: 20 } }, stats: { a: { gp: 50, pts: 1000, tf: 10 } } },
+    { scoring: { pts: 0.5, tf: -2 }, projWeight: 0.5 });
+  // tf only exists last season (0.2/g) so it counts fully: 10 - 0.4
+  assert.ok(Math.abs(pool[0].fpg - 9.6) < 1e-9);
+});

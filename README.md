@@ -1,71 +1,94 @@
 # Hoops Draft Assistant
 
-A draft tool for Sleeper fantasy basketball points leagues. It rescores Sleeper's projections and
-last season's stats with **your league's own scoring**, values players over replacement for
-**your** roster (e.g. 3 UTIL slots), and helps you pick live during the draft.
+A draft tool for Sleeper fantasy basketball points leagues. It takes projected **stats** from
+several sites (never their fantasy-point totals), scores them with **your league's own scoring**,
+projects games played from durability history and current injuries, and compares the result
+with Sleeper ADP. It values players over replacement for **your** roster (e.g. 3 UTIL slots) and
+syncs live with your Sleeper draft.
 
-See [STRATEGY.md](STRATEGY.md) for the draft plan for a 10-team league, pick 6, default Sleeper
-scoring and 3 UTIL slots.
+- [STRATEGY.md](STRATEGY.md): draft plan for a 10-team league, pick 6, 3 UTIL, with player
+  targets for each early pick.
+- [CHEATSHEET.md](CHEATSHEET.md): printable rankings, pick-by-pick targets, injury traps and
+  values.
 
 ## Run it
 
-It's a static page with no build step and no dependencies. Run either:
+It's a static page with no build step and no dependencies. Download the repo and double-click
+`index.html`, or serve it:
 
 ```sh
-npm start            # or: python3 -m http.server 8000
-# then open http://localhost:8000
+npm start            # python3 -m http.server 8000 → http://localhost:8000
 ```
 
-Or open `index.html` directly, or turn on GitHub Pages for the repo.
+Go to **Settings & data** → **Load from Sleeper** (the league and draft IDs are pre-filled), then
+turn on **Live sync** when the draft starts.
 
-Then go to **Settings & data**, enter the league ID and your Sleeper username, and click
-**Load from Sleeper**.
+## Where the numbers come from
 
-## What it pulls from Sleeper (read-only, no login)
+`scripts/build_consensus.py` (Python standard library only) writes `data/consensus.js` and
+`data/consensus.csv`:
 
-| Data | Endpoint |
+| Input | Used for |
 |---|---|
-| League scoring, roster slots, team count, draft ID | `api.sleeper.app/v1/league/{id}` (+ `/users`, `/drafts`) |
-| Draft order and live picks | `api.sleeper.app/v1/draft/{id}` and `/picks` |
-| Player positions, teams, injury status | `api.sleeper.app/v1/players/nba` (cached for 24h) |
-| Season projections + ADP | `api.sleeper.com/projections/nba/{season}` |
-| Last season's stats | `api.sleeper.com/stats/nba/{season-1}` |
+| Sleeper season projections (Rotowire, per game) | Stat line, weight 1 |
+| ESPN season projections (per game + projected games) | Stat line, weight 1; games |
+| FantasyPros consensus projections (season totals + games) | Stat line, weight 1; games |
+| Sleeper actual stats, last season | Stat line, weight 0.5 (also technicals, flagrants) |
+| Sleeper games played, last 3 seasons | Durability |
+| ESPN injury report (status, estimated return date) + Sleeper injury fields | Games lost to current injuries |
+| Sleeper `adp_std` | ADP (ESPN ADP optional) |
 
-Fantasy points are always recomputed from the raw stat line (points, rebounds, assists, steals,
-blocks, turnovers, double/triple-doubles, technicals…) with the league's `scoring_settings`.
-Pre-computed fantasy totals are never used.
+**Projected games** = 50% × durability × games still available + 50% × the average of the ESPN and
+FantasyPros games projections, capped at games still available. In more detail:
 
-If your browser blocks a request, the **Manual import** box lists each URL so you can paste the
-JSON instead. You can also import a CSV of stats from any site, such as Basketball-Reference,
-Hashtag Basketball or ESPN. It is rescored with your settings, never trusted as fantasy points.
+- **Durability** is games played over the last three seasons, weighted 3:2:1 toward the most
+  recent season. It is pulled toward 80% so a small sample doesn't swing it, and a season the
+  player was in the league but didn't play counts as 0.
+- **Games still available** = 82 − estimated games missed to a current injury, from the ESPN
+  return date or "out for season" flag.
+- **Override:** you can set any player's games estimate yourself in their detail view.
+
+**Fantasy points** are computed in the app from the stat line with the league's
+`scoring_settings` (pts 0.5, reb 1, ast 1, stl 2, blk 2, TO −1, 3PM 0.5, DD 1, TD 2, tech/flagrant −2,
+40-pt and 50-pt game bonuses +2). 40/50-point games are estimated from scoring average. Sleeper's
+season `bonus_*` fields are flags, not counts, so they're ignored.
+
+To refresh before a draft:
+
+```sh
+python3 scripts/build_consensus.py && node scripts/cheatsheet.js
+```
+
+There's also a **Live Sleeper** source (Settings → Projection source), and you can import a stats
+CSV from any site.
 
 ## Features
 
-- **Board**: every player with FP/G, projected games, season FP, VORP, **Gain** (improvement to
-  *your* optimal lineup), **Now** (gain adjusted for whether he'd last to your next pick), Sleeper
-  ADP, value vs ADP, and the chance he survives to your next pick. Position filters, a "fits my
-  lineup" filter and tier-break markers.
+- **Board.** For every player:
+  - fantasy points per game, projected games, 3-season average games, season points
+  - value over replacement (VORP)
+  - **Gain**: how much he improves *your* best lineup
+  - **Now**: Gain adjusted for whether he'd last to your next pick
+  - Sleeper ADP, value vs ADP, chance he's still there at your next pick
+  - injury badges (OUT / DTD with games missed; hover for the report)
 - **Recommendations**: the top three picks for your next selection, with reasons.
-- **Live sync**: polls the Sleeper draft every 4s.
-- **Manual mode**: *Taken* / *Mine* buttons for drafts tracked by hand.
-- **Mock draft**: the other teams pick around ADP. Undo steps back to your previous pick.
-- **Draft plan**: realistic targets for each of your upcoming picks, a positional scarcity
-  table, players the market over- and under-values, and format risers and fallers.
-- **Player detail**: where each player's fantasy points come from, stat by stat.
+- **Live sync** with the Sleeper draft (every 4s). Manual *Taken* / *Mine* buttons. **Mock draft**
+  against ADP.
+- **Draft plan tab**: realistic targets at each of your upcoming picks, positional scarcity, and
+  players your format likes more or less than ADP.
+- **Player detail**: projections by source, games-played history, durability, the injury note, a
+  games override, and a per-stat points breakdown.
 - **Export**: rankings as CSV.
 
 ## How values are computed
 
-1. **Projected line** = weighted blend of Sleeper's season projection and last season's per-game
-   stats (default 60/40), scored with the league settings. Projected games come from Sleeper's
-   projection (or 95% of last season's games), capped by *Max games*.
-2. **Replacement level**: all teams' starting slots are filled league-wide with an optimal
-   assignment. The best leftover player at each position sets the bar. VORP = value − replacement
-   at the player's most favourable eligible position.
-3. **Gain**: your roster is scored as an optimal starting lineup plus bench at *bench weight*
-   (default 0.3). Gain is the change from adding the player.
-4. **Now** = Gain − (expected best Gain at your next pick − the same without this player). This
-   favours players who won't make it back to you. Availability assumes ADP ± max(2.5, 22% of ADP).
+1. **Replacement level**: all teams' starting slots (100 with 3 UTIL) are filled league-wide with
+   an optimal assignment. The best leftover player at each position sets the bar. VORP = season
+   points − replacement.
+2. **Gain**: your roster is scored as an optimal starting lineup plus bench at *bench weight*
+   (0.3). Gain is the change from adding a player.
+3. **Now** = Gain − (expected best Gain at your next pick − the same without this player).
+   Availability assumes ADP ± max(2.5, 22% of ADP).
 
 ## Tests
 

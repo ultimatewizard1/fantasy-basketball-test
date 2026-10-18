@@ -9,17 +9,18 @@
 })(typeof self !== 'undefined' ? self : this, function () {
   'use strict';
 
-  // Sleeper NBA defaults as described for this league (3 UTIL instead of 2).
+  // Sleeper NBA defaults (matches league 1414370391324950528's scoring_settings).
   var DEFAULT_SCORING = {
-    pts: 0.5, reb: 1, ast: 1, stl: 2, blk: 2, to: -1,
-    dd: 1, td: 2, tf: -2, ff: -2
+    pts: 0.5, reb: 1, ast: 1, stl: 2, blk: 2, to: -1, tpm: 0.5,
+    dd: 1, td: 2, tf: -2, ff: -2, bonus_pt_40p: 2, bonus_pt_50p: 2
   };
   var DEFAULT_ROSTER = ['PG', 'SG', 'G', 'SF', 'PF', 'F', 'C', 'UTIL', 'UTIL', 'UTIL', 'BN', 'BN', 'BN'];
   var BASE_POSITIONS = ['PG', 'SG', 'SF', 'PF', 'C'];
   var STAT_LABELS = {
     pts: 'Points', reb: 'Rebounds', ast: 'Assists', stl: 'Steals', blk: 'Blocks',
-    to: 'Turnovers', dd: 'Double-doubles', td: 'Triple-doubles',
-    tf: 'Technical fouls', ff: 'Flagrant fouls'
+    to: 'Turnovers', tpm: '3-pointers made', dd: 'Double-doubles', td: 'Triple-doubles',
+    tf: 'Technical fouls', ff: 'Flagrant fouls',
+    bonus_pt_40p: '40-point games', bonus_pt_50p: '50-point games'
   };
   // Keys that are counts, not rates, and so get divided by games played.
   var NON_COUNTING = { gp: 1, gs: 1, adp: 1 };
@@ -66,7 +67,9 @@
     if (!stats || gp <= 0) return null;
     var out = { gp: gp };
     Object.keys(stats).forEach(function (k) {
-      if (NON_COUNTING[k] || k.indexOf('adp') === 0 || k.indexOf('rank') === 0 || k.indexOf('pos_') === 0 || k.charAt(0) === '_') return;
+      // Sleeper's season bonus_* fields are flags (always 1), not counts; see estimateBonuses.
+      if (NON_COUNTING[k] || k.indexOf('adp') === 0 || k.indexOf('rank') === 0 || k.indexOf('pos_') === 0 ||
+          k.indexOf('bonus_') === 0 || k.charAt(0) === '_') return;
       var v = stats[k];
       if (typeof v === 'number' || (typeof v === 'string' && v !== '' && isFinite(v))) out[k] = perGame ? num(v) : num(v) / gp;
     });
@@ -74,14 +77,39 @@
   }
 
   // Totals have pts well above gp for nearly every regular; averages don't.
+  // Sleeper's season projections are per game with gp = 1.
   function looksPerGame(map) {
-    var n = 0, below = 0;
+    var n = 0, below = 0, unit = 0, withPts = 0;
     Object.keys(map || {}).forEach(function (id) {
       var s = map[id];
       var gp = num(s.gp), pts = num(s.pts);
+      if (pts > 0) { withPts++; if (gp <= 1) unit++; }
       if (gp >= 20 && pts > 0) { n++; if (pts < gp) below++; }
     });
+    if (withPts >= 10 && unit / withPts > 0.7) return true;
     return n >= 10 && below / n > 0.7;
+  }
+
+  /*
+   * Expected 40- and 50-point games per game, from scoring average. Single
+   * game points are roughly normal with sd ~ 0.25 * ppg + 1.
+   */
+  function estimateBonuses(line) {
+    var ppg = num(line && line.pts);
+    var out = Object.assign({}, line);
+    if (ppg <= 0) return out;
+    var sd = 0.25 * ppg + 1;
+    out.bonus_pt_40p = 1 - normCdf((39.5 - ppg) / sd);
+    out.bonus_pt_50p = 1 - normCdf((49.5 - ppg) / sd);
+    return out;
+  }
+
+  // Fill stats one line lacks (e.g. technicals) from another, for fair comparisons.
+  function fillFrom(line, other) {
+    if (!line) return null;
+    var out = Object.assign({}, other || {}, line);
+    delete out.gp;
+    return out;
   }
 
   /* ---------------- positions ---------------- */
@@ -155,6 +183,7 @@
 
   /*
    * Merge Sleeper players + projections + last-season stats into one pool.
+   * input: { players, projections, stats, adp, games (id -> projected GP override) }
    * opts: { scoring, projWeight (0..1), gamesCap, defaultGames, minGames }
    */
   function buildPool(input, opts) {
@@ -166,11 +195,13 @@
     var proj = input.projections || {};
     var last = input.stats || {};
     var adpMap = input.adp || {};
+    var games = input.games || {};
     var ids = {};
     Object.keys(proj).forEach(function (id) { ids[id] = 1; });
     Object.keys(last).forEach(function (id) { ids[id] = 1; });
     var projPerGame = looksPerGame(proj);
     var lastPerGame = looksPerGame(last);
+    var score = function (line) { return fantasyPoints(estimateBonuses(line), scoring); };
 
     var pool = [];
     Object.keys(ids).forEach(function (id) {
@@ -184,20 +215,18 @@
       if (lastPg && lastPg.gp < (opts.minGames || 5)) lastPg = null;
       if (!projPg && !lastPg) return;
 
-      var projFpg = projPg ? fantasyPoints(projPg, scoring) : null;
-      var lastFpg = lastPg ? fantasyPoints(lastPg, scoring) : null;
-      var fpg;
-      if (projFpg != null && lastFpg != null) fpg = projWeight * projFpg + (1 - projWeight) * lastFpg;
-      else fpg = projFpg != null ? projFpg : lastFpg;
+      // Score the blended line (stats one source lacks are filled from the other).
+      var line = estimateBonuses(blendLines(fillFrom(projPg, lastPg), fillFrom(lastPg, projPg), projWeight));
+      var fpg = fantasyPoints(line, scoring);
+      var projFpg = projPg ? score(fillFrom(projPg, lastPg)) : null;
+      var lastFpg = lastPg ? score(fillFrom(lastPg, projPg)) : null;
 
       var gp;
-      if (projPg) gp = projPg.gp;
+      if (games[id] != null) gp = num(games[id]);
+      else if (projPg && projPg.gp > 1) gp = projPg.gp;
       else if (lastPg) gp = Math.round(lastPg.gp * 0.95);
       else gp = defaultGames;
       gp = Math.min(gp, gamesCap);
-
-      // Blend per-game stat lines too, for the breakdown view.
-      var line = blendLines(projPg, lastPg, projWeight);
 
       var name = meta.full_name || ((meta.first_name || '') + ' ' + (meta.last_name || '')).trim() || (proj[id] && proj[id]._name) || (last[id] && last[id]._name) || id;
       pool.push({
@@ -513,6 +542,7 @@
     breakdown: breakdown,
     toPerGame: toPerGame,
     looksPerGame: looksPerGame,
+    estimateBonuses: estimateBonuses,
     normalizePositions: normalizePositions,
     slotAccepts: slotAccepts,
     starterSlots: starterSlots,

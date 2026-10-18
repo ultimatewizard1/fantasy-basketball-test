@@ -1,9 +1,9 @@
 # Draft strategy: 10-team Sleeper points league, pick 6
 
 This plan is built for **your** settings. Other sites' fantasy-point projections use different
-scoring (or are category-based), so the draft tool only takes raw stat lines and rescores them.
-Treat the reasoning below as the strategy. Use the tool's **Draft plan** tab for current player
-names, ADP and availability.
+scoring (or are category-based), so the tool only takes their raw stat lines and rescores them
+with your league's scoring. Section 3 has the player-specific plan for this draft. The tool's
+**Draft plan** tab updates it live as picks happen.
 
 ## 1. What your scoring rewards
 
@@ -15,19 +15,26 @@ names, ADP and availability.
 | Steal | 2 | **4** |
 | Block | 2 | **4** |
 | Turnover | −1 | −2 |
+| 3-pointer made | +0.5 bonus | 1 |
 | Double-double | +1 bonus | |
 | Triple-double | +2 bonus | |
+| 40-point game / 50-point game | +2 / +2 | |
 | Technical / flagrant | −2 | |
+
+These are the league's actual `scoring_settings`. They include three items beyond the ones you
+listed: 3-pointers made (+0.5), and +2 bonuses for 40- and 50-point games. All three are small.
+3s add ~1 FP/G for a high-volume shooter. The 40-point bonus adds ~0.2 FP/G even for the top
+scorers.
 
 Points scored are worth half as much as everything else, so the box-score "feel" misleads. Some
 example stat lines:
 
-| Archetype | Line (pts / reb / ast / stl / blk / TO) | FP/G |
+| Archetype | Line (pts / reb / ast / stl / blk / TO / 3PM) | FP/G |
 |---|---|---|
-| Volume wing scorer | 27 / 5 / 5 / 1.0 / 0.5 / 3.0 | **23.5** |
-| Rebounding + passing center | 20 / 12 / 6 / 1.0 / 1.0 / 3.0, 60% DD | **29.6** |
-| Rim protector | 14 / 10 / 2 / 0.7 / 2.5 / 1.5, 45% DD | **24.4** |
-| Pass-first PG | 20 / 4 / 9 / 1.5 / 0.3 / 3.5, 30% DD | **23.4** |
+| Volume wing scorer | 27 / 5 / 5 / 1.0 / 0.5 / 3.0 / 2.5 | **24.9** |
+| Rebounding + passing center | 20 / 12 / 6 / 1.0 / 1.0 / 3.0 / 0.5, 60% DD | **29.9** |
+| Rim protector | 14 / 10 / 2 / 0.7 / 2.5 / 1.5 / 0, 45% DD | **24.4** |
+| Pass-first PG | 20 / 4 / 9 / 1.5 / 0.3 / 3.5 / 2.0, 30% DD | **24.4** |
 
 A 14-point rim protector is worth about the same as a 27-point scorer. Takeaways:
 
@@ -62,7 +69,49 @@ bench players, so the waiver wire starts around the 131st-best player.
 - **Multi-position eligibility (PG/SG, SF/PF, PF/C) has real value.** It lets the lineup
   optimiser start your best 10 every night.
 
-## 3. Pick 6 in a 10-team snake
+## 3. Your board for this draft (data as of Oct 18, 2026)
+
+Numbers come from the bundled consensus (Sleeper/Rotowire + ESPN + FantasyPros, plus last
+season). Projected games blend each player's last three seasons of games played with the
+sources' own games estimates, minus games lost to current injuries. "% there" is the chance a
+player is still available at that pick, based on Sleeper ADP. Full tables are in
+[CHEATSHEET.md](CHEATSHEET.md).
+
+**Pick 6.** Take **Giannis** if he's there (34.0 FP/G, ~63 games, 77% there). If not, take
+**Cade Cunningham** (29.6, ~69 g, 47% there) or **Jalen Johnson** (30.9, ~66 g, ADP 14). Johnson
+has about a coin-flip chance of reaching #15, so taking him at 6 is reasonable. The fallbacks are
+**Karl-Anthony Towns** or **Alperen Şengün** (~27.5 FP/G, 71–72 games, 95%+ there): durable bigs
+who won't make it back to 15.
+
+**Pick 15.** Best of **Cooper Flagg** (68% there), **Evan Mobley** (86%) and **Amen Thompson** (89%),
+or Jalen Johnson if he slid. **Don't** spend #15 on Bam Adebayo, Josh Giddey, James Harden or Deni
+Avdija. Their ADPs are 36–38, and each has a ~90% chance of still being there at #26.
+
+**Picks 26 and 35.** Take two of **Bam Adebayo** (26.2 FP/G, 74 g), **Josh Giddey** (27.7, 67 g),
+**James Harden** (24.8, 73 g) and **Deni Avdija** (24.9, 71 g). All four rank
+10–21 in your format, against ADP in the mid-to-high 30s. Each is ~60% to last to #35. **Jalen
+Duren**, **Pascal Siakam** and **Derrick White** are ~90% to last to #35.
+
+**Picks 46 and 55: centers slide.** **Donovan Clingan** (ADP 93, rank 29), **Rudy Gobert** (ADP 84),
+**Onyeka Okongwu** (ADP 72) and **Julius Randle** (ADP 62) are each 70–99% likely to still be there
+at #46–55. Fill C/UTIL with them here instead of spending early picks on centers.
+
+**Let someone else draft these at their ADP** (rank in your format in brackets):
+- Tyrese Haliburton, ADP 18 [65]: 0 games last season. This is the one to override if you
+  believe he's fully back.
+- Trae Young, ADP 22 [72]: 15 games last season.
+- Ja Morant, ADP 48 [149].
+- Joel Embiid, ADP 56 [95]: 38/19/39 games over 3 seasons.
+- Jimmy Butler, ADP 68 [251]: torn ACL, return ~January.
+- Shaedon Sharpe, ADP 100: torn meniscus, ~March.
+- Mark Williams, ADP 125: shoulder, ~February.
+- Donte DiVincenzo, ADP 130: Achilles, ~April.
+
+A mock draft taking the tool's top pick every round gave Giannis, Flagg, Bam, Giddey, Duren,
+Clingan, Randle, Okongwu, Caleb Wilson, Alexander-Walker, Podziemski, Wiggins and Acuff. That is
+about 249 FP/G across the 10 starters. Treat it as an example; real drafts vary.
+
+## 4. Pick 6 in a 10-team snake: general rules
 
 Your picks: **6, 15, 26, 35, 46, 55, 66, 75, 86, 95, 106, 115, 126.**
 You wait 9 picks and 11 picks, alternating. You are mid-board, so you never get the turn's
@@ -90,11 +139,16 @@ back-to-back picks, but you never wait 18 picks either.
 5. **Turnovers and technicals:** small, but they break ties. Prefer the cleaner player when values
    are close.
 
-## 4. Draft-day checklist
+## 5. Draft-day checklist
 
-1. Open the tool → **Settings & data** → League ID `1414370391324950528`, your Sleeper username → **Load from Sleeper**.
-2. Confirm that **Teams = 10**, **My slot = 6**, the roster shows 3 UTIL, and the scoring JSON matches your league.
-3. Run 2–3 **mock drafts** (Board → *Start mock draft*) to see who tends to reach you at 6, 15 and 26.
-4. Re-load the morning of the draft (injuries, ADP and projections update).
+1. Download the repo (Code → Download ZIP), unzip it and double-click `index.html`. Nothing to
+   install. Sleeper's API allows browser requests, so live sync works from a local file.
+2. **Settings & data** → **Load from Sleeper**. The league ID and draft ID are pre-filled. Check
+   that it shows 10 teams, slot 6 and 3 UTIL.
+3. Run 1–2 **mock drafts** (Board → *Start mock draft*).
+4. If you disagree with a player's projected games, open him and set your own estimate. Rankings
+   update immediately.
 5. When the draft starts, turn on **Live sync**. The board drops drafted players and the clock
    counts down to your pick.
+6. Optional: refresh the data shortly before the draft with
+   `python3 scripts/build_consensus.py && node scripts/cheatsheet.js`.
