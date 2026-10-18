@@ -70,7 +70,7 @@
                   <th class="num" title="Season value in the selected ranking (Lock-In: locked score per week × weeks with at least one game)">Season</th>
                   <th class="num" title="Value over replacement (season or per-game, see settings)">VORP</th>
                   <th class="num" title="How much this player improves YOUR roster right now">Gain</th>
-                  <th class="num" title="Gain adjusted for whether he'd still be there at your next pick">Now</th>
+                  <th class="num" title="Two-pick lookahead: what he adds now plus the best player you can expect at your next pick with him on your roster, compared with not taking him. Captures positional drop-offs (value over next available).">Now</th>
                   <th class="num" title="Sleeper ADP">ADP</th>
                   <th class="num" title="ADP rank minus our rank. Positive = market is sleeping on him">+/-</th>
                   <th class="num" title="Chance he is still available at your next pick">Next</th>
@@ -210,7 +210,7 @@
         <p><strong>FP/G</strong> is a projected stat line scored with your league's scoring. The stat line is a blend of Sleeper's season projection and last season's per-game stats; set the mix under <em>Settings</em>. Other sites' fantasy-point totals are never used, only their raw stats.</p>
         <p><strong>VORP</strong> (value over replacement): every team's 10 starting slots (PG, SG, G, SF, PF, F, C, 3×UTIL) are filled league-wide with the best players. The best player left over at each position sets that position's replacement level. A player's VORP is how far he sits above it. With 3 UTIL slots, 100 starters league-wide decide replacement level.</p>
         <p><strong>Gain</strong> is how much your roster's value goes up if you draft him now. It uses an optimal lineup of your current players, with bench players counting at the bench weight. Once your C and UTIL spots are full, another center's Gain drops even if his VORP is high.</p>
-        <p><strong>Now</strong> is Gain minus what you'd lose by passing on him, using Sleeper ADP to estimate whether he will still be there at your next pick. Two similar players? Take the one who won't make it back. The top three by this column are shown as recommendations.</p>
+        <p><strong>Now</strong> is a two-pick lookahead ("value over next available"). It is what the player adds now, plus the best player you can expect at your next pick <em>with him on your roster</em>, compared with not taking him. Availability is estimated from Sleeper ADP. Two similar players? It prefers the one who won't make it back, and the one at a position where the drop-off to your next pick is bigger. The top three by this column are shown as recommendations.</p>
         <p><strong>Next</strong> is the chance a player is still available at your next pick (ADP ± a spread that grows later in the draft).</p>
         <p><strong>+/-</strong>: ADP rank minus our rank. Big positive numbers are players your scoring likes more than the market does, so you can often wait on them. Negative numbers are players the market will overdraft for your format.</p>
         <h2>During the draft</h2>

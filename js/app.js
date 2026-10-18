@@ -224,25 +224,36 @@
       p.next = target ? C.availability(effAdp(p), cur, target) : null;
     });
 
-    // Pick-now value: gain minus what passing on him costs, using odds he
-    // survives from my decision pick to my following pick.
-    var cands = available.slice().sort(function (a, b) { return b.gain - a.gain; }).slice(0, 80);
+    // Pick-now value: a two-pick lookahead ("value over next available").
+    // For each top candidate X: what X adds now, plus the best player I can
+    // expect at my following pick once X is on my roster (so a second player
+    // at a filled position is worth less), minus the same expectation if I
+    // don't take X. Availability at the following pick comes from ADP.
+    var cands = available.slice().sort(function (a, b) { return b.gain - a.gain; }).slice(0, 60);
     var probs = cands.map(function (p) {
       if (!decision || !following) return 0;
       return C.availability(effAdp(p), Math.max(cur, decision), following);
     });
-    function expectedBest(skip) {
+    function expectedNext(roster, skip) {
+      if (!decision || !following) return 0;
+      var b = C.rosterScore(roster, config.roster, config.benchWeight).score;
+      var opts = [];
+      cands.forEach(function (p, i) {
+        if (i === skip || probs[i] <= 0) return;
+        var g = C.rosterScore(roster.concat([p]), config.roster, config.benchWeight).score - b;
+        if (g > 0) opts.push({ g: g, a: probs[i] });
+      });
+      opts.sort(function (x, y) { return y.g - x.g; });
       var e = 0, none = 1;
-      for (var i = 0; i < cands.length; i++) {
-        if (i === skip) continue;
-        e += Math.max(cands[i].gain, 0) * probs[i] * none;
-        none *= 1 - probs[i];
-      }
+      opts.forEach(function (o) { e += o.g * o.a * none; none *= 1 - o.a; });
       return e;
     }
-    var eAll = expectedBest(-1);
-    available.forEach(function (p) { p.score = p.gain; });
-    cands.forEach(function (p, i) { p.score = p.gain - (eAll - expectedBest(i)); });
+    var eBase = expectedNext(mine, -1);
+    available.forEach(function (p) { p.score = p.gain; p.nextIfTaken = null; });
+    cands.slice(0, 30).forEach(function (p, i) {
+      p.nextIfTaken = expectedNext(mine.concat([p]), i);
+      p.score = p.gain + p.nextIfTaken - eBase;
+    });
 
     // Before my turn, only recommend players with a real chance of reaching my pick.
     var recPool = onClock ? available : available.filter(function (p) { return p.next == null || p.next >= 0.3; });
@@ -550,6 +561,7 @@
     var gainPct = derived.recs[0] && derived.recs[0].gain > 0 ? p.gain / derived.recs[0].gain : 1;
     bits.push(fmt(p.fpg) + ' FP/G, ~' + fmt(p.lockWeekly, 1) + ' locked/wk, ' + fmt(p.gp, 0) + ' GP');
     bits.push('VORP ' + fmt(p.vorp, 0));
+    if (p.nextIfTaken != null && derived.following) bits.push('then ~' + fmt(p.nextIfTaken, 0) + ' expected at #' + derived.following);
     if (p.next != null) bits.push(pct(p.next) + (derived.onClock ? ' to last to your next pick' : ' chance he is there at #' + derived.decision));
     if (p.cons && p.cons.injury && p.cons.injury.gamesMissed >= 3) bits.push('injury: ~' + p.cons.injury.gamesMissed + ' games missed');
     else if (p.cons && p.cons.excluded && p.cons.excluded.length) {

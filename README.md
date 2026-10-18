@@ -104,8 +104,10 @@ CSV from any site.
    points − replacement.
 2. **Gain**: your roster is scored as an optimal starting lineup plus bench at *bench weight*
    (0.3). Gain is the change from adding a player.
-3. **Now** = Gain − (expected best Gain at your next pick − the same without this player).
-   Availability assumes ADP ± max(2.5, 22% of ADP).
+3. **Now** is a two-pick lookahead ("value over next available"). It is what the player adds now,
+   plus the best Gain you can expect at your next pick **with him on your roster**, minus that
+   same expectation if you don't take him. A player likely to make it back to you scores lower.
+   So does one whose position you'd fill twice. Availability assumes ADP ± max(2.5, 22% of ADP).
 
 ## Tests
 
