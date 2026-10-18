@@ -168,6 +168,55 @@ In later rounds, **Zach Edey** (ADP 101) and **Jakob Poeltl** (ADP 118) are high
 Disagree with a player's expected games? Open him in the tool and set your own number. The
 rankings update immediately.
 
+## 4b. Simulated drafts (1,000 per row)
+
+`node scripts/simulate.js 1000` runs full mock drafts. The other 9 teams draft around Sleeper ADP
+with realistic randomness. Each team is scored as the season Lock-In points of its best
+starting lineup, plus bench players at 0.3 weight.
+
+**Strategy from slot 6:**
+
+| Strategy | Team Lock-In points | vs. the tool |
+|---|---:|---:|
+| Tool's **Now** pick (two-pick lookahead) | **7,252** | – |
+| Best roster fit (Gain, no lookahead) | 7,206 | −46 |
+| Guards early (PG/SG in rounds 1–4 when close) | 7,166 | −86 |
+| Best value on the board, ignoring your roster | 7,165 | −87 |
+| Bigs early (C-eligible in rounds 1–4 when close) | 7,068 | −184 |
+| Draft by ADP like everyone else | 6,381 | **−871 (−12%)** |
+
+**Every draft slot using the tool:**
+
+| Slot | Points | vs. slot 6 | Usual 1st pick |
+|---:|---:|---:|---|
+| 1 | 7,392 | +140 | Jokić |
+| 2 | 7,371 | +119 | Jokić / Dončić |
+| 3 | 7,325 | +73 | Dončić / Jokić |
+| 4 | 7,273 | +21 | Giannis / Dončić |
+| 5 | 7,251 | −1 | Giannis |
+| **6** | **7,252** | – | Giannis (89%), Tatum (9%) |
+| 7 | 7,248 | −4 | Giannis / Tatum |
+| 8 | 7,216 | −36 | Tatum / Giannis |
+| 9 | 7,192 | −60 | Tatum |
+| 10 | 7,175 | −77 | Tatum / Şengün |
+
+Margin of error is about ±2–5 points per row.
+
+**Typical team following the tool from slot 6** (most common pick each round, from
+`node scripts/simulate.js 400 rounds 6`):
+- **R1:** Giannis
+- **R2:** Sabonis or Jalen Johnson
+- **R3:** Giddey
+- **R4:** Bam / Avdija
+- **R5:** Duren / Siakam
+- **R6:** Kessler
+- **R7–8:** Clingan / Ware / Gobert
+- **R9–10:** Lillard / Kyrie / Caleb Wilson
+- **R11–13:** Derik Queen, Dejounte Murray, Podziemski / Acuff
+
+These assume opponents draft by ADP. Real leaguemates who draft for this format would narrow
+every gap above.
+
 ## 5. Pick 6 in a 10-team snake: general rules
 
 Your picks: **6, 15, 26, 35, 46, 55, 66, 75, 86, 95, 106, 115, 126.**
