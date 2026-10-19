@@ -24,7 +24,10 @@
     adpKey: '',
     // 'consensus' = bundled data/consensus.js; 'sleeper' = live Sleeper projections.
     source: 'consensus',
-    gpOverrides: {}
+    gpOverrides: {},
+    // Each pick a player is taken before his ADP must be paid for with this much
+    // extra value (best in scripts/simulate.js reach tests: 1%).
+    reachPremium: 0.01
   };
   var CONS = window.CONSENSUS || null;
 
@@ -250,9 +253,13 @@
     }
     var eBase = expectedNext(mine, -1);
     available.forEach(function (p) { p.score = p.gain; p.nextIfTaken = null; });
+    var pickNow = onClock ? cur : (decision || cur);
+    var premium = config.reachPremium == null ? 0.01 : config.reachPremium;
     cands.slice(0, 30).forEach(function (p, i) {
       p.nextIfTaken = expectedNext(mine.concat([p]), i);
-      p.score = p.gain + p.nextIfTaken - eBase;
+      p.reach = Math.max(0, effAdp(p) - pickNow);
+      var total = p.gain + p.nextIfTaken;
+      p.score = (total > 0 ? total / (1 + premium * p.reach) : total) - eBase;
     });
 
     // Before my turn, only recommend players with a real chance of reaching my pick.
@@ -468,6 +475,7 @@
     $('valueKey').value = config.valueKey;
     $('gamesCap').value = config.gamesCap;
     $('benchWeight').value = config.benchWeight;
+    $('reachPremium').value = Math.round((config.reachPremium == null ? 0.01 : config.reachPremium) * 1000) / 10;
     var sel = $('adpKey');
     sel.innerHTML = adpOptions().map(function (o) {
       return '<option value="' + esc(o.value) + '"' + (o.value === config.adpKey ? ' selected' : '') + '>' + esc(o.label) + '</option>';
@@ -501,6 +509,8 @@
     var bw = parseFloat($('benchWeight').value);
     config.benchWeight = isFinite(bw) ? Math.max(0, Math.min(1, bw)) : config.benchWeight;
     config.adpKey = $('adpKey').value || config.adpKey;
+    var rp = parseFloat($('reachPremium').value);
+    if (isFinite(rp)) config.reachPremium = Math.max(0, Math.min(10, rp)) / 100;
     var src = $('source').value;
     if (src !== config.source) { config.source = src; config.adpKey = ''; ensureAdpKey(); }
   }

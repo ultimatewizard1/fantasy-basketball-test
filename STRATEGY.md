@@ -202,17 +202,41 @@ starting lineup, plus bench players at 0.3 weight.
 
 Margin of error is about ±2–5 points per row.
 
-**Typical team following the tool from slot 6** (most common pick each round, from
+**How far ahead of ADP to reach** (`node scripts/simulate.js 800 reach 6`). Each team is scored
+two ways:
+- **A:** the projections are exactly right.
+- **B:** the market knows something. True value = 70% projection + 30% what the player's ADP
+  implies, ±12% random error per player.
+
+| Rule | A | B | B vs. no limit |
+|---|---:|---:|---:|
+| No limit (old tool) | 7,252 | 7,029 | – |
+| Hard cap: never more than 12 picks early | 7,235 | 7,065 | +36 |
+| Hard cap: 8 picks | 7,211 | 7,054 | +25 |
+| Hard cap: 4 picks | 7,158 | 7,022 | −7 |
+| Hard cap: 0 picks | 6,739 | 6,738 | −291 |
+| **Premium: +1% value per pick of reach** | 7,275 | **7,107** | **+78** |
+| Premium: +0.5% per pick | **7,282** | 7,099 | +70 |
+| Premium: +2% per pick | 7,214 | 7,059 | +30 |
+| Draft by ADP | 6,382 | 6,469 | −560 |
+
+Requiring **1% more value for each pick of reach** works best under both assumptions, so the
+app now uses it by default (Settings → *Reach premium %/pick*).
+
+**Typical team from slot 6 with the 1% premium** (most common pick each round, from
 `node scripts/simulate.js 400 rounds 6`):
 - **R1:** Giannis
-- **R2:** Sabonis or Jalen Johnson
-- **R3:** Giddey
-- **R4:** Bam / Avdija
+- **R2:** Flagg or Jalen Johnson
+- **R3:** Sabonis (76%)
+- **R4:** Giddey (81%)
 - **R5:** Duren / Siakam
-- **R6:** Kessler
-- **R7–8:** Clingan / Ware / Gobert
-- **R9–10:** Lillard / Kyrie / Caleb Wilson
-- **R11–13:** Derik Queen, Dejounte Murray, Podziemski / Acuff
+- **R6:** LeBron / Kessler
+- **R7:** Castle / Allen / MPJ
+- **R8:** Ware / Gobert
+- **R9:** Clingan
+- **R10:** Buzelis / Caleb Wilson
+- **R11–12:** Derik Queen / Kyrie / Dejounte Murray / Podziemski
+- **R13:** Lillard (92%)
 
 These assume opponents draft by ADP. Real leaguemates who draft for this format would narrow
 every gap above.
