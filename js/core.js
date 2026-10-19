@@ -359,15 +359,24 @@
     return Math.max(0, LOCKIN_WEEKS - lostWeeks) * (1 - MISSED_GAMES_IN_LOST_WEEKS * (1 - rate));
   }
 
+  // Game-to-game sd used for Lock-In maths (individual swing mostly shrunk).
+  function effectiveSd(fpg, cv) {
+    var c = cv == null ? DEFAULT_CV : cv;
+    return Math.max(((1 - SWING_SHRINK) * c + SWING_SHRINK * DEFAULT_CV) * fpg, 1);
+  }
+
+  // Calibrated expected locked score per week.
+  function lockInWeekly(fpg, cv) {
+    return fpg + LOCKIN_CALIBRATION * (weeklyLockIn(fpg, effectiveSd(fpg, cv)) - fpg);
+  }
+
   // opts: { cv: id -> sd/mean, missed: id -> games lost to a current injury }
   function applyLockIn(pool, opts) {
     opts = opts || {};
     pool.forEach(function (p) {
       var cv = opts.cv && opts.cv[p.id] != null ? opts.cv[p.id] : DEFAULT_CV;
-      var cvEff = (1 - SWING_SHRINK) * cv + SWING_SHRINK * DEFAULT_CV;
-      var sd = Math.max(cvEff * p.fpg, 1);
       p.cv = cv;
-      p.lockWeekly = p.fpg + LOCKIN_CALIBRATION * (weeklyLockIn(p.fpg, sd) - p.fpg);
+      p.lockWeekly = lockInWeekly(p.fpg, cv);
       p.lockWeeks = lockInWeeks(p.gp, opts.missed && opts.missed[p.id]);
       p.lockin = p.lockWeekly * p.lockWeeks;
     });
@@ -642,6 +651,8 @@
     weeklyLockIn: weeklyLockIn,
     lockInWeeks: lockInWeeks,
     applyLockIn: applyLockIn,
+    effectiveSd: effectiveSd,
+    lockInWeekly: lockInWeekly,
     preseasonSignal: preseasonSignal,
     preseasonBaseline: preseasonBaseline,
     LOCKIN_WEEKS: LOCKIN_WEEKS,

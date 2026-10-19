@@ -23,6 +23,26 @@ npm start            # python3 -m http.server 8000 → http://localhost:8000
 Go to **Settings & data** → **Load from Sleeper** (the league and draft IDs are pre-filled), then
 turn on **Live sync** when the draft starts.
 
+## In-season tools (`season.html`)
+
+Open `season.html`, or click **In-season tools** in the draft tool. It loads your league, every
+roster, this season's stats, live injuries and this week's NBA games from Sleeper and ESPN. Pick
+your team in the top right; it defaults to your draft slot.
+
+| Tab | What it does |
+|---|---|
+| **This week** | The best lineup for the rest of the week. Each player's expected locked score uses his remaining games, his injury status (Out 0%, Doubtful 25%, Questionable 65%, Day-to-day 80% chance to play) and any finished game you can still lock. It flags who to start and who to sit compared with your current Sleeper lineup. |
+| **Lock-In** | For every starter: this week's games with fantasy points from ESPN box scores, and **LOCK** or **PASS** on his latest game. The bar is the expected value of waiting for his remaining games, and drops if he might miss them. Includes a quick calculator for any score. |
+| **Waivers** | Free agents ranked by how much they improve your rest-of-season lineup value, with the best player to drop. Filter by position or hide injured players. |
+| **Trades** | Tick players on both sides to see the value change for you and for them, plus draft-day "market" value to help you pitch it. **Find trades** searches every 1-for-1, 2-for-1 and 1-for-2 with all teams for deals that help you without hurting them by our numbers. |
+
+Rest-of-season value works like the draft values, with two changes:
+- **Per-game projection:** the preseason consensus counts as 15 games, then this season's real
+  production takes over as games pile up.
+- **Injuries:** live injury reports remove weeks.
+
+Add `?date=YYYY-MM-DD` to the URL to view another week.
+
 ## Where the numbers come from
 
 `scripts/build_consensus.py` (Python standard library only) writes `data/consensus.js` and

@@ -67,12 +67,12 @@
     return out;
   }
 
-  function readCache() {
+  function readCache(maxAge) {
     try {
       var raw = localStorage.getItem(PLAYER_CACHE_KEY);
       if (!raw) return null;
       var parsed = JSON.parse(raw);
-      if (Date.now() - parsed.at > PLAYER_CACHE_MS) return null;
+      if (Date.now() - parsed.at > (maxAge || PLAYER_CACHE_MS)) return null;
       return parsed.players;
     } catch (e) { return null; }
   }
@@ -98,10 +98,13 @@
     },
 
     draft: function (draftId) { return getJson(V1 + '/draft/' + draftId); },
+    rosters: function (leagueId) { return getJson(V1 + '/league/' + leagueId + '/rosters'); },
+    matchups: function (leagueId, week) { return getJson(V1 + '/league/' + leagueId + '/matchups/' + week); },
     picks: function (draftId) { return getJson(V1 + '/draft/' + draftId + '/picks'); },
 
-    players: function (force) {
-      var cached = !force && readCache();
+    // maxAge: accept a cached copy up to this old (ms); in-season injuries change daily.
+    players: function (force, maxAge) {
+      var cached = !force && readCache(maxAge);
       if (cached) return Promise.resolve(cached);
       return getJson(V1 + '/players/nba').then(function (all) {
         var slim = slimPlayers(all);
