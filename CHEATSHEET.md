@@ -1,6 +1,6 @@
 # Draft cheat sheet: slot 6, 10 teams
 
-Generated from `data/consensus.js` (built 2026-10-18 23:19 UTC from Sleeper/Rotowire, ESPN, FantasyPros consensus + last season at half weight). Regenerate: `python3 scripts/build_consensus.py && node scripts/cheatsheet.js`.
+Generated from `data/consensus.js` (built 2026-10-19 00:31 UTC from Sleeper/Rotowire, ESPN, FantasyPros consensus + last season at half weight). Regenerate: `python3 scripts/build_consensus.py && node scripts/cheatsheet.js`.
 
 Scoring: pts 0.5, reb 1, ast 1, stl 2, blk 2, to -1, tpm 0.5, dd 1, td 2, tf -2, ff -2, bonus_pt_40p 2, bonus_pt_50p 2. **Lock-In scoring:** one game per player per week counts, and you choose which. Rankings use **Lock/wk** (the expected score of the game you lock, with smart lock-or-pass decisions over 2–4 games, from his projected average and game-to-game **Swing** in last season's ESPN game logs) × weeks he plays at least one game. A missed game here and there barely matters; whole weeks lost to injury do. Expected games = 50% career games-played rate (one-off outlier seasons such as a single major injury count at 35% weight; recent seasons weigh more) + 50% ESPN/FantasyPros expected games, minus games lost to current injuries. Outlier seasons are marked * in the 3y GP column.
 
