@@ -77,9 +77,8 @@ his next game starts, and the last game of the week counts if you never lock. On
 be locked. The tool's default ranking (**Lock-In**) is built for this:
 
 - **Weekly value = the expected score of the game you end up locking.** With smart lock-or-pass
-  decisions over a typical 2–4-game week, that's about **the player's average + 0.67 × his
-  game-to-game swing** (standard deviation). Swing is measured from each player's ESPN game
-  logs last season, scored with your settings.
+  decisions over a typical 2–4-game week, that's roughly **the player's average + 18%**. It's
+  calibrated to a replay of last season, where the bonus averaged +3.6 points per week.
 - **Season value = weekly value × weeks with at least one game.** Missing 1–2 games in a week
   costs almost nothing, but a missed week scores zero. Known injuries count as whole lost weeks.
   For other expected absences, 70% are assumed to wipe out a week (injury stretches); the rest
@@ -89,10 +88,12 @@ What that means for the draft:
 1. **Durability matters less than in standard leagues.** A star who plays 55–60 games but shows
    up most weeks is fine. Anthony Davis climbs to #14 and Embiid to #55, about his ADP. Players
    who miss **long stretches** still hurt: Morant ranks #107 against ADP 48, Zion #86 against 51.
-2. **Upside beats consistency.** A streaky player with the same average is worth more, because
-   you lock his big game and skip the dud. Big men are the streakiest (blocks and boards swing a
-   lot): Kel'el Ware, Zach Edey and Jakob Poeltl have ~50% swing and all move up. Very steady
-   players lose a little: SGA (24%) drops to #7 and Amen Thompson (25%) to #33.
+2. **Consistency barely matters.** I replayed last season week by week for 146 players. Smart
+   locking beat a player's average game by **~3.6 points per week**. That bonus was about the
+   same for streaky and steady players with similar averages: the streakiest third gained +3.7
+   and the steadiest third +4.0. So the rankings now mostly ignore individual swing (80% shrunk
+   to the league median) and the bonus is calibrated to that replay. **Draft on average and
+   availability, not streakiness.**
 3. **Games per week stop mattering.** Don't pay for 4-game weeks or chase schedule streams.
 4. **Your 3 IR slots** accept Out, Suspended and DNR players. An injured player only costs you a
    roster spot once he's healthy. That makes late-round stashes of long-term injured players
@@ -150,12 +151,12 @@ per minute). So the lower-risk play is Davis or Flagg at 15, then Sabonis at 26 
 
 **Picks 46 and 55: centers slide, and the streaky ones are worth more here.** Targets:
 - **Donovan Clingan**: rank 29, ADP 93
-- **Kel'el Ware**: rank 41, ADP 76, the most boom-or-bust big
+- **Kel'el Ware**: rank 57, ADP 76
 - **Rudy Gobert**: rank 46, ADP 84
 - **Damian Lillard**: rank 52, ADP 147
-- **Joel Embiid**: rank 55, ADP 56. Fine in Lock-In: he only has to play once a week.
+- **Joel Embiid**: rank 46, ADP 56. Fine in Lock-In: he only has to play once a week.
 
-In later rounds, **Zach Edey** (ADP 101) and **Jakob Poeltl** (ADP 118) are high-swing bigs.
+In later rounds, **Zach Edey** (ADP 101) and **Jakob Poeltl** (ADP 118) are fine depth bigs, but not special targets.
 
 **Let someone else draft these at their ADP:**
 - Ja Morant, ADP 48 [rank 107]
@@ -223,20 +224,19 @@ two ways:
 Requiring **1% more value for each pick of reach** works best under both assumptions, so the
 app now uses it by default (Settings → *Reach premium %/pick*).
 
-**Typical team from slot 6 with the 1% premium** (most common pick each round, from
-`node scripts/simulate.js 400 rounds 6`):
+**Typical team from slot 6 with the 1% premium and calibrated Lock-In values** (most common pick
+each round, from `node scripts/simulate.js 400 rounds 6`):
 - **R1:** Giannis
-- **R2:** Flagg or Jalen Johnson
-- **R3:** Sabonis (76%)
-- **R4:** Giddey (81%)
-- **R5:** Duren / Siakam
-- **R6:** LeBron / Kessler
-- **R7:** Castle / Allen / MPJ
-- **R8:** Ware / Gobert
-- **R9:** Clingan
-- **R10:** Buzelis / Caleb Wilson
-- **R11–12:** Derik Queen / Kyrie / Dejounte Murray / Podziemski
-- **R13:** Lillard (92%)
+- **R2:** Anthony Davis or Jalen Johnson
+- **R3:** Sabonis (74%)
+- **R4:** Bam / Giddey
+- **R5:** Duren
+- **R6:** Kessler / LeBron
+- **R7:** Castle / Michael Porter Jr.
+- **R8–9:** Clingan
+- **R10:** Caleb Wilson / Buzelis
+- **R11–12:** Kyrie / Dejounte Murray / Derik Queen
+- **R13:** Lillard (94%)
 
 These assume opponents draft by ADP. Real leaguemates who draft for this format would narrow
 every gap above.

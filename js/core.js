@@ -319,6 +319,12 @@
   var DEFAULT_CV = 0.37;          // median game-to-game sd/mean in last season's logs
   var MISSED_GAMES_IN_LOST_WEEKS = 0.7; // share of missed games that wipe out a whole week
   var TEAM_GAMES_PER_WEEK = 3.4;
+  // Calibrated by replaying 2025-26 for 146 players: the lock-in bonus was
+  // real (+3.6/week vs +4.0 predicted) but did not grow with a player's own
+  // season-long swing among similar averages, so individual swing is mostly
+  // shrunk to the league median and the bonus scaled to match.
+  var SWING_SHRINK = 0.8;
+  var LOCKIN_CALIBRATION = 0.9;
 
   function normPdf(z) { return Math.exp(-z * z / 2) / Math.sqrt(2 * Math.PI); }
 
@@ -358,9 +364,10 @@
     opts = opts || {};
     pool.forEach(function (p) {
       var cv = opts.cv && opts.cv[p.id] != null ? opts.cv[p.id] : DEFAULT_CV;
-      var sd = Math.max(cv * p.fpg, 1);
+      var cvEff = (1 - SWING_SHRINK) * cv + SWING_SHRINK * DEFAULT_CV;
+      var sd = Math.max(cvEff * p.fpg, 1);
       p.cv = cv;
-      p.lockWeekly = weeklyLockIn(p.fpg, sd);
+      p.lockWeekly = p.fpg + LOCKIN_CALIBRATION * (weeklyLockIn(p.fpg, sd) - p.fpg);
       p.lockWeeks = lockInWeeks(p.gp, opts.missed && opts.missed[p.id]);
       p.lockin = p.lockWeekly * p.lockWeeks;
     });
