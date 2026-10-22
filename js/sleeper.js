@@ -114,6 +114,11 @@
     },
 
     projections: function (season) { return firstWorking(seasonUrls('projections', season), nonEmpty); },
+    // Per-game projections for one week: one row per player per game, with date and opponent.
+    weekProjections: function (season, week) {
+      var pos = POSITIONS.map(function (p) { return 'position[]=' + p; }).join('&');
+      return getJson(WEB + '/projections/nba/' + season + '/' + week + '?season_type=regular&' + pos);
+    },
     stats: function (season) { return firstWorking(seasonUrls('stats', season), nonEmpty); }
   };
 

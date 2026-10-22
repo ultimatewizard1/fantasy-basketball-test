@@ -63,11 +63,14 @@
       out.week = parseInt(out.state.week, 10) || 1;
       return Promise.all([
         Sleeper.stats(out.league.season).then(function (x) { return C.normalizeStatsPayload(x.data); }).catch(function () { return {}; }),
-        out.league.draft_id ? Sleeper.draft(out.league.draft_id).catch(function () { return null; }) : null
+        out.league.draft_id ? Sleeper.draft(out.league.draft_id).catch(function () { return null; }) : null,
+        Sleeper.weekProjections(out.league.season, out.week).catch(function () { return []; }),
+        Sleeper.weekProjections(out.league.season, out.week + 1).catch(function () { return []; })
       ]);
     }).then(function (r) {
       out.seasonStats = r[0];
       out.draft = r[1];
+      out.weekProjRaw = { this: r[2] || [], next: r[3] || [] };
       st = out;
       pickMyTeam();
       buildValues();
@@ -129,9 +132,24 @@
 
   /* ---------------- values ---------------- */
 
+  // Sleeper weekly projections: one row per player per game -> id -> [{date, opp, fp}].
+  function parseWeekProj(rows, scoring) {
+    var out = {};
+    (rows || []).forEach(function (r) {
+      if (!r || !r.stats || !r.stats.gp || r.player_id == null) return;
+      var id = String(r.player_id);
+      (out[id] = out[id] || []).push({ date: r.date, opp: r.opponent, fp: C.fantasyPoints(C.estimateBonuses(r.stats), scoring), min: (r.stats.sp || 0) / 60 });
+    });
+    Object.keys(out).forEach(function (id) { out[id].sort(function (a, b) { return a.date < b.date ? -1 : 1; }); });
+    return out;
+  }
+
+  function avgFp(list) { return list && list.length ? list.reduce(function (s, g) { return s + g.fp; }, 0) / list.length : null; }
+
   function buildValues() {
     var scoring = C.cleanScoring(st.league.scoring_settings);
     st.scoring = scoring;
+    st.wp = { this: parseWeekProj(st.weekProjRaw.this, scoring), next: parseWeekProj(st.weekProjRaw.next, scoring) };
     st.roster = st.league.roster_positions || C.DEFAULT_ROSTER;
     st.weeksLeft = Math.max(1, S.FANTASY_WEEKS - st.week + 1);
     var consById = {};
@@ -139,6 +157,8 @@
     var ids = {};
     Object.keys(consById).forEach(function (id) { ids[id] = 1; });
     Object.keys(st.seasonStats).forEach(function (id) { ids[id] = 1; });
+    Object.keys(st.wp.this).forEach(function (id) { ids[id] = 1; });
+    Object.keys(st.wp.next).forEach(function (id) { ids[id] = 1; });
     st.rosters.forEach(function (r) { (r.players || []).forEach(function (id) { ids[id] = 1; }); });
 
     var pool = {};
@@ -153,8 +173,10 @@
       var pg = st.seasonStats[id] ? C.toPerGame(st.seasonStats[id]) : null;
       var gp = pg ? pg.gp : 0;
       var seasonFpg = pg ? C.fantasyPoints(C.estimateBonuses(pg), scoring) : null;
-      if (!cons && gp < 2 && !isRostered(id)) return;
-      var mu = S.blendFpg(projFpg, seasonFpg || 0, gp);
+      var projThis = st.wp.this[id] || [], projNext = st.wp.next[id] || [];
+      if (!cons && gp < 2 && !isRostered(id) && !projThis.length && !projNext.length) return;
+      var recent = avgFp(projThis.length ? projThis : projNext);
+      var mu = S.blendFpg(projFpg, seasonFpg || 0, gp, recent);
       var cv = cons ? cons.cv : null;
       var injLive = meta.injury_status || '';
       var espn = st.espnInj[C.normalizeName(name)];
@@ -168,7 +190,8 @@
       pool[id] = {
         id: id, name: name, team: meta.team || (cons && cons.team) || 'FA', pos: pos,
         injury: injLive || (espn ? espn.status : ''), injNote: espn ? espn.comment : '', injReturn: espn ? espn.ret : null,
-        mu: mu, sd: C.effectiveSd(mu, cv), weekly: weekly, projFpg: projFpg, seasonFpg: seasonFpg, gp: gp,
+        mu: mu, sd: C.effectiveSd(mu, cv), cv: cv, weekly: weekly, projFpg: projFpg, seasonFpg: seasonFpg, gp: gp,
+        projThis: projThis, projNext: projNext, recentProj: recent,
         weeksOut: weeksOut, durability: cons ? cons.durability : 0.8, adp: cons ? cons.adp : null,
         ros: S.rosValue(weekly, st.weeksLeft, cons ? cons.durability : 0.8, weeksOut)
       };
@@ -227,34 +250,49 @@
     }));
   }
 
-  // Per player: this week's games, a finished game that can still be locked,
-  // games left, and the expected locked score for the rest of the week.
+  // Per player: this week's games, a finished game that can still be locked
+  // (my roster only), games left, the expected locked score for the rest of
+  // the week at this week's projected level, and next week's expected score.
   function computeWeek() {
-    var mine = myRoster();
-    rosterPlayers(mine).forEach(function (p) {
-      var games = st.games.filter(function (g) { return g.teams.indexOf(p.team) >= 0; });
+    var mineIds = {};
+    (myRoster().players || []).forEach(function (id) { mineIds[id] = 1; });
+    Object.keys(st.pool).forEach(function (id) {
+      var p = st.pool[id];
       var key = p.team + '|' + C.normalizeName(p.name);
-      var list = games.map(function (g) {
-        var box = st.box[g.id];
+      var list = st.games.filter(function (g) { return g.teams.indexOf(p.team) >= 0; }).map(function (g) {
+        var box = mineIds[id] ? st.box[g.id] : null;
         var row = box ? box[key] : null;
-        return { game: g, state: g.state, fp: row ? row.fp : null, line: row ? row.line : null, dnp: g.state === 'post' && box && !row };
+        var day = S.easternDate(new Date(g.date));
+        var proj = (p.projThis || []).filter(function (x) { return x.date === day; })[0] || null;
+        return { game: g, state: g.state, fp: row ? row.fp : null, line: row ? row.line : null, dnp: g.state === 'post' && box && !row, proj: proj };
       });
       var left = list.filter(function (x) { return x.state === 'pre'; }).length;
       var live = list.some(function (x) { return x.state === 'in'; });
       // The latest finished game is lockable only if nothing after it has tipped off.
       var pending = null;
-      for (var i = list.length - 1; i >= 0; i--) {
-        if (list[i].state === 'post' && list[i].fp != null) {
-          var laterStarted = list.slice(i + 1).some(function (x) { return x.state !== 'pre'; });
-          if (!laterStarted) pending = list[i];
-          break;
+      if (mineIds[id]) {
+        for (var i = list.length - 1; i >= 0; i--) {
+          if (list[i].state === 'post' && list[i].fp != null) {
+            var laterStarted = list.slice(i + 1).some(function (x) { return x.state !== 'pre'; });
+            if (!laterStarted) pending = list[i];
+            break;
+          }
+          if (list[i].state !== 'pre') break;
         }
-        if (list[i].state !== 'pre') break;
       }
       var q = S.playProb(p.injury);
+      var upcoming = list.filter(function (x) { return x.state !== 'post' && x.proj; }).map(function (x) { return x.proj.fp; });
+      var mu = S.weekLevel(upcoming.length ? upcoming : (p.projThis || []).map(function (x) { return x.fp; }), p.mu);
+      var sd = C.effectiveSd(mu, p.cv);
+      var muNext = S.weekLevel((p.projNext || []).map(function (x) { return x.fp; }), p.mu);
+      var next;
+      if (p.projNext && p.projNext.length) next = C.lockInValue(muNext, C.effectiveSd(muNext, p.cv), p.projNext.length);
+      else if (!(p.projThis && p.projThis.length)) next = p.weekly * q; // not in weekly projections: season level
+      else next = 0; // projected this week but not next: expected out
       p.week = {
-        games: list, left: left + (live ? 1 : 0), pending: pending, q: q, live: live,
-        value: S.weekValue(p.mu, p.sd, pending ? pending.fp : null, left + (live ? 1 : 0), q)
+        games: list, left: left + (live ? 1 : 0), pending: pending, q: q, live: live, mu: mu, sd: sd,
+        value: S.weekValue(mu, sd, pending ? pending.fp : null, left + (live ? 1 : 0), q),
+        muNext: muNext, next: next, nextGames: (p.projNext || []).length
       };
     });
   }
@@ -291,7 +329,7 @@
   function gameChips(p) {
     return p.week.games.map(function (x) {
       var label = dayLabel(x.game.date);
-      if (x.state === 'pre') return '<span class="pick-pill">' + label + '</span>';
+      if (x.state === 'pre') return '<span class="pick-pill" title="Sleeper projection">' + label + (x.proj ? ' · proj ' + fmt(x.proj.fp, 0) : '') + '</span>';
       if (x.state === 'in') return '<span class="pick-pill next">' + label + ' live</span>';
       if (x.dnp) return '<span class="pick-pill done">' + label + ' DNP</span>';
       return '<span class="pick-pill' + (p.week.pending === x ? ' next' : '') + '">' + label + ': <strong>' + fmt(x.fp) + '</strong></span>';
@@ -322,7 +360,22 @@
     current.forEach(function (id) { var p = st.pool[id]; if (p && p.week) curTotal += p.week.value; });
     best.starters.forEach(function (s) { if (s.player) bestTotal += s.player.week.value; });
     $('weekView').innerHTML = '<p>Expected locked points for the rest of the week: <strong>' + fmt(bestTotal, 0) + '</strong> with this lineup vs ' + fmt(curTotal, 0) + ' with your current Sleeper lineup.</p>' +
-      '<div class="table-wrap"><table class="board"><thead><tr><th>Slot</th><th>Player</th><th>Pos</th><th class="num" title="Expected locked score from the rest of the week">Exp. locked</th><th>Games this week (FP)</th><th></th></tr></thead><tbody>' + rows + bench + '</tbody></table></div>';
+      '<div class="table-wrap"><table class="board"><thead><tr><th>Slot</th><th>Player</th><th>Pos</th><th class="num" title="Expected locked score from the rest of the week">Exp. locked</th><th>Games this week (FP, or projection)</th><th></th></tr></thead><tbody>' + rows + bench + '</tbody></table></div>' +
+      renderNextWeek(mine, slots);
+  }
+
+  // Best lineup for next week from Sleeper's per-game projections.
+  function renderNextWeek(mine, slots) {
+    var best = C.assign(mine.filter(function (p) { return p.pos.length; }), slots, function (p) { return p.week ? p.week.next : 0; });
+    var total = 0;
+    var row = function (slot, p) {
+      if (p) total += slot === 'BN' ? 0 : p.week.next;
+      return '<tr' + (slot === 'BN' ? ' class="drafted"' : '') + '><td class="slot">' + esc(slot) + '</td><td>' + (p ? nameCell(p) : '<span class="slot-empty">empty</span>') + '</td><td class="pos">' + (p ? esc(p.pos.join('/')) : '') + '</td>' +
+        '<td class="num">' + (p ? p.week.nextGames : '') + '</td><td class="num">' + (p ? fmt(p.week.muNext) : '') + '</td><td class="num">' + (p ? fmt(p.week.next) : '') + '</td></tr>';
+    };
+    var html = best.starters.map(function (s) { return row(s.slot, s.player); }).join('') + best.bench.map(function (p) { return row('BN', p); }).join('');
+    return '<h2 style="margin-top:18px">Next week (planning)</h2><p class="muted small">From Sleeper\'s per-game projections for next week, which reflect current roles and injuries. Expected locked points with this lineup: <strong>' + fmt(total, 0) + '</strong>.</p>' +
+      '<div class="table-wrap"><table class="board"><thead><tr><th>Slot</th><th>Player</th><th>Pos</th><th class="num">Games</th><th class="num" title="Projected FP per game next week">Proj FP/G</th><th class="num">Exp. locked</th></tr></thead><tbody>' + html + '</tbody></table></div>';
   }
 
   function renderLock() {
@@ -333,18 +386,18 @@
       var verdict, cls = '';
       if (w.pending && w.left === 0) { verdict = 'Last game of his week: <strong>' + fmt(w.pending.fp) + '</strong> counts automatically.'; cls = 'muted'; }
       else if (w.pending) {
-        var d = S.lockDecision(p.mu, p.sd, w.pending.fp, w.left, w.q);
+        var d = S.lockDecision(p.week.mu, p.week.sd, w.pending.fp, w.left, w.q);
         verdict = (d.lock ? '<strong class="good">LOCK</strong>' : '<strong class="warnc">PASS</strong>') + ': scored <strong>' + fmt(w.pending.fp) + '</strong>, the bar with ' + w.left + ' game' + (w.left === 1 ? '' : 's') + ' left is <strong>' + fmt(d.threshold) + '</strong>' +
           (w.q < 0.95 ? ' (lowered: ' + esc(p.injury) + ')' : '') + '. Decide before his next game tips off.';
       } else if (w.live) verdict = 'Game in progress. Check back after it ends.';
       else if (!w.games.length) verdict = 'No games this week. Consider benching him.';
       else if (w.games.every(function (x) { return x.state === 'pre'; })) verdict = w.left > 1
-        ? 'First game ' + dayLabel(w.games[0].game.date) + '. Lock it if it reaches <strong>' + fmt(S.lockDecision(p.mu, p.sd, 0, w.left - 1, w.q).threshold) + '</strong>; otherwise wait.'
+        ? 'First game ' + dayLabel(w.games[0].game.date) + '. Lock it if it reaches <strong>' + fmt(S.lockDecision(p.week.mu, p.week.sd, 0, w.left - 1, w.q).threshold) + '</strong>; otherwise wait.'
         : 'Only one game this week (' + dayLabel(w.games[0].game.date) + '). It counts automatically.';
       else verdict = w.left > 1
-        ? 'His last finished game can no longer be locked (a later game started). Bar for his next game: <strong>' + fmt(S.lockDecision(p.mu, p.sd, 0, w.left - 1, w.q).threshold) + '</strong>.'
+        ? 'His last finished game can no longer be locked (a later game started). Bar for his next game: <strong>' + fmt(S.lockDecision(p.week.mu, p.week.sd, 0, w.left - 1, w.q).threshold) + '</strong>.'
         : 'His last finished game can no longer be locked. His final game this week counts automatically.';
-      return '<div class="card"><div class="row gap wrap" style="justify-content:space-between"><div>' + nameCell(p) + ' <span class="pos">' + esc(p.pos.join('/')) + '</span></div><div class="small muted">avg ' + fmt(p.mu) + ' FP/G · swing ±' + fmt(p.sd) + '</div></div>' +
+      return '<div class="card"><div class="row gap wrap" style="justify-content:space-between"><div>' + nameCell(p) + ' <span class="pos">' + esc(p.pos.join('/')) + '</span></div><div class="small muted">this week ' + fmt(p.week.mu) + ' FP/G' + (Math.abs(p.week.mu - p.mu) >= 1 ? ' (season ' + fmt(p.mu) + ')' : '') + ' · swing ±' + fmt(p.week.sd) + '</div></div>' +
         '<div style="margin:6px 0">' + gameChips(p) + '</div><div class="' + cls + '">' + verdict + '</div></div>';
     }).join('');
     $('lockView').innerHTML = '<p class="muted small">Starters only (bench players can\'t be locked). The bar is the expected value of waiting for his remaining games. Lock if the game you just saw beats it. Sleeper doesn\'t publish what you\'ve already locked, so ignore players you\'ve locked this week.</p><div class="plan-grid">' + cards + '</div>';
@@ -356,20 +409,38 @@
   }
 
   function renderWaivers() {
+    var horizon = view.faHorizon || 'ros';
+    var hv = function (p) {
+      if (!p.week) return 0;
+      return horizon === 'this' ? p.week.value : horizon === 'two' ? p.week.value + p.week.next : p.ros;
+    };
     var fas = Object.keys(st.pool).filter(function (k) { return !st.rostered[k]; }).map(function (k) { return st.pool[k]; })
       .filter(function (p) { return view.faPos === 'ALL' || p.pos.indexOf(view.faPos) >= 0; })
       .filter(function (p) { return !view.faHealthy || !/out/i.test(p.injury || ''); })
-      .sort(function (a, b) { return b.ros - a.ros; }).slice(0, 60);
+      .sort(function (a, b) { return hv(b) - hv(a); }).slice(0, 60);
     var mine = rosterPlayers(myRoster());
-    var moves = S.waiverMoves(mine, fas, waiverCtx()).slice(0, 30);
-    var gamesThisWeek = function (p) { return st.games.filter(function (g) { return g.teams.indexOf(p.team) >= 0 && g.state === 'pre'; }).length; };
-    $('waiverView').innerHTML = '<p class="muted small">Gain = change in your team\'s rest-of-season lineup value if you add him and drop the suggested player. FP/G blends his projection with this season\'s games.</p>' +
-      '<div class="table-wrap"><table class="board"><thead><tr><th>Add</th><th>Pos</th><th class="num">FP/G</th><th class="num">Season (GP)</th><th class="num">Lock/wk</th><th class="num">ROS</th><th class="num" title="Games left this week">Wk G</th><th>Drop</th><th class="num">Gain</th></tr></thead><tbody>' +
+    var moves;
+    if (horizon === 'ros') moves = S.waiverMoves(mine, fas, waiverCtx());
+    else {
+      // Short-term pickups: only consider dropping my 4 lowest rest-of-season players.
+      var cands = mine.slice().sort(function (a, b) { return a.ros - b.ros; }).slice(0, 4);
+      moves = S.shortTermMoves(mine, fas, cands, st.roster, hv, function (p) { return p.ros || 0; }, waiverCtx());
+    }
+    moves = moves.slice(0, 30);
+    var help = {
+      ros: 'Gain = change in your team\'s rest-of-season lineup value if you add him and drop the suggested player.',
+      this: 'Gain = extra expected locked points in your starting lineup for the rest of this week, dropping one of your 4 lowest rest-of-season players. "Season cost" is what that drop costs over the rest of the season.',
+      two: 'Gain = extra expected locked points in your starting lineup over the rest of this week plus next week, dropping one of your 4 lowest rest-of-season players. "Season cost" is what that drop costs over the rest of the season.'
+    }[horizon];
+    $('waiverView').innerHTML = '<p class="muted small">' + help + ' FP/G blends his preseason projection, this season\'s games and this week\'s projection.</p>' +
+      '<div class="table-wrap"><table class="board"><thead><tr><th>Add</th><th>Pos</th><th class="num" title="Projected FP per game this week (Sleeper)">This wk FP/G</th><th class="num" title="Expected locked points, rest of this week">This wk</th><th class="num" title="Expected locked points next week">Next wk</th><th class="num" title="Rest-of-season FP/G">FP/G</th><th class="num">Season (GP)</th><th class="num">ROS</th><th>Drop</th><th class="num">Gain</th>' + (horizon === 'ros' ? '' : '<th class="num">Season cost</th>') + '</tr></thead><tbody>' +
       moves.map(function (m) {
         var p = m.add;
-        return '<tr' + (m.gain > 0 ? ' class="rec"' : '') + '><td>' + nameCell(p) + '</td><td class="pos">' + esc(p.pos.join('/')) + '</td><td class="num">' + fmt(p.mu) + '</td>' +
-          '<td class="num">' + (p.gp ? fmt(p.seasonFpg) + ' (' + p.gp + ')' : '–') + '</td><td class="num">' + fmt(p.weekly) + '</td><td class="num">' + fmt(p.ros, 0) + '</td><td class="num">' + gamesThisWeek(p) + '</td>' +
-          '<td>' + (m.drop ? esc(m.drop.name) : '–') + '</td><td class="num ' + (m.gain > 0 ? 'good' : 'bad') + '">' + (m.gain > 0 ? '+' : '') + fmt(m.gain, 0) + '</td></tr>';
+        return '<tr' + (m.gain > 0 ? ' class="rec"' : '') + '><td>' + nameCell(p) + '</td><td class="pos">' + esc(p.pos.join('/')) + '</td>' +
+          '<td class="num">' + fmt(p.week.mu) + '</td><td class="num">' + fmt(p.week.value) + '</td><td class="num">' + fmt(p.week.next) + '</td><td class="num">' + fmt(p.mu) + '</td>' +
+          '<td class="num">' + (p.gp ? fmt(p.seasonFpg) + ' (' + p.gp + ')' : '–') + '</td><td class="num">' + fmt(p.ros, 0) + '</td>' +
+          '<td>' + (m.drop ? esc(m.drop.name) : '–') + '</td><td class="num ' + (m.gain > 0 ? 'good' : 'bad') + '">' + (m.gain > 0 ? '+' : '') + fmt(m.gain, horizon === 'ros' ? 0 : 1) + '</td>' +
+          (horizon === 'ros' ? '' : '<td class="num ' + (m.rosChange >= 0 ? 'good' : 'bad') + '">' + (m.rosChange >= 0 ? '+' : '') + fmt(m.rosChange, 0) + '</td>') + '</tr>';
       }).join('') + '</tbody></table></div>';
   }
 
@@ -429,7 +500,14 @@
   function showDetail(id) {
     var p = st.pool[id];
     if (!p) return;
-    var weekLine = p.week ? '<tr><td>This week</td><td class="num">' + gameChips(p) + '</td></tr><tr><td>Expected locked score, rest of week</td><td class="num">' + fmt(p.week.value) + '</td></tr>' : '';
+    var projList = function (list) {
+      return (list || []).map(function (g) { return dayLabel(g.date + 'T16:00:00Z') + ' vs ' + esc(g.opp || '?') + ': <strong>' + fmt(g.fp) + '</strong> (' + fmt(g.min, 0) + ' min)'; }).join('<br>') || 'none';
+    };
+    var weekLine = p.week ? '<tr><td>This week</td><td class="num">' + gameChips(p) + '</td></tr>' +
+      '<tr><td>Sleeper projections this week</td><td class="num small">' + projList(p.projThis) + '</td></tr>' +
+      '<tr><td>Expected locked score, rest of week</td><td class="num">' + fmt(p.week.value) + ' (at ' + fmt(p.week.mu) + ' FP/G)</td></tr>' +
+      '<tr><td>Sleeper projections next week</td><td class="num small">' + projList(p.projNext) + '</td></tr>' +
+      '<tr><td>Expected locked score, next week</td><td class="num">' + fmt(p.week.next) + '</td></tr>' : '';
     $('playerDetail').innerHTML = '<h2>' + esc(p.name) + ' <span class="pos">' + esc(p.pos.join('/')) + ' · ' + esc(p.team) + '</span></h2>' +
       (p.injury ? '<p class="bad">' + esc(p.injury) + (p.injReturn ? ' · est. return ' + esc(p.injReturn.slice(0, 10)) : '') + (p.injNote ? '<br><span class="small">' + esc(p.injNote) + '</span>' : '') + '</p>' : '') +
       '<table class="detail-table">' +
@@ -478,14 +556,16 @@
       renderWaivers();
     });
     $('faHealthy').addEventListener('change', function (e) { view.faHealthy = e.target.checked; renderWaivers(); });
+    $('faHorizon').addEventListener('change', function (e) { view.faHorizon = e.target.value; renderWaivers(); });
     $('calcBtn').addEventListener('click', function () {
       var p = st.pool[$('calcPlayer').value];
       var score = parseFloat($('calcScore').value);
       var left = parseInt($('calcLeft').value, 10) || 0;
       if (!p || !isFinite(score)) { $('calcOut').innerHTML = '<p class="muted">Pick a player and enter his score.</p>'; return; }
-      var d = S.lockDecision(p.mu, p.sd, score, left, S.playProb(p.injury));
+      var lvl = p.week ? p.week.mu : p.mu, sdv = p.week ? p.week.sd : p.sd;
+      var d = S.lockDecision(lvl, sdv, score, left, S.playProb(p.injury));
       $('calcOut').innerHTML = '<p>' + (d.forced ? 'No games left: this game counts automatically.' :
-        (d.lock ? '<strong class="good">LOCK</strong>' : '<strong class="warnc">PASS</strong>') + ': the bar with ' + left + ' game' + (left === 1 ? '' : 's') + ' left is <strong>' + fmt(d.threshold) + '</strong> (his average ' + fmt(p.mu) + ').') + '</p>';
+        (d.lock ? '<strong class="good">LOCK</strong>' : '<strong class="warnc">PASS</strong>') + ': the bar with ' + left + ' game' + (left === 1 ? '' : 's') + ' left is <strong>' + fmt(d.threshold) + '</strong> (his level this week ' + fmt(lvl) + ').') + '</p>';
     });
     document.body.addEventListener('click', function (e) {
       var d = e.target.closest('[data-detail]');

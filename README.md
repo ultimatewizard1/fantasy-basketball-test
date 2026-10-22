@@ -33,12 +33,16 @@ your team in the top right; it defaults to your draft slot.
 |---|---|
 | **This week** | The best lineup for the rest of the week. Each player's expected locked score uses his remaining games, his injury status (Out 0%, Doubtful 25%, Questionable 65%, Day-to-day 80% chance to play) and any finished game you can still lock. It flags who to start and who to sit compared with your current Sleeper lineup. |
 | **Lock-In** | For every starter: this week's games with fantasy points from ESPN box scores, and **LOCK** or **PASS** on his latest game. The bar is the expected value of waiting for his remaining games, and drops if he might miss them. Includes a quick calculator for any score. |
-| **Waivers** | Free agents ranked by how much they improve your rest-of-season lineup value, with the best player to drop. Filter by position or hide injured players. |
+| **Waivers** | Free agents ranked by **rest of season**, **this week** or **this week + next week**, with the best player to drop. Short-term modes use Sleeper's per-game weekly projections, only suggest dropping one of your 4 lowest rest-of-season players, and show the season cost of that drop. |
 | **Trades** | Tick players on both sides to see the value change for you and for them, plus draft-day "market" value to help you pitch it. **Find trades** searches every 1-for-1, 2-for-1 and 1-for-2 with all teams for deals that help you without hurting them by our numbers. |
 
+**Weekly projections.** Sleeper publishes a projection for every game this week and next, and
+these react to role changes like a starter getting hurt. They set each player's level for this
+week's start/sit, lock bars and the **next-week lineup** (80% weekly projection, 20% season level).
+
 Rest-of-season value works like the draft values, with two changes:
-- **Per-game projection:** the preseason consensus counts as 15 games, then this season's real
-  production takes over as games pile up.
+- **Per-game projection:** the preseason consensus counts as 15 games and the current weekly
+  projection as 10, then this season's real production takes over as games pile up.
 - **Injuries:** live injury reports remove weeks.
 
 Add `?date=YYYY-MM-DD` to the URL to view another week.

@@ -58,6 +58,11 @@
           <button class="chip" data-pos="SF">SF</button><button class="chip" data-pos="PF">PF</button>
           <button class="chip" data-pos="C">C</button>
         </div>
+        <label>Rank by <select id="faHorizon">
+          <option value="ros">Rest of season</option>
+          <option value="this">This week (streaming)</option>
+          <option value="two">This week + next week</option>
+        </select></label>
         <label class="toggle"><input type="checkbox" id="faHealthy" checked> Hide players listed Out</label>
       </div>
       <div id="waiverView"></div>
@@ -80,7 +85,8 @@
         <p><strong>Rest-of-season value (ROS)</strong>: each player's projected fantasy points per game (preseason consensus, blended with this season's actual production, which counts more as games pile up) turned into an expected <em>locked</em> score per week, times the weeks he's expected to play from now to week 24. Known injuries (ESPN return dates, live Sleeper status) remove weeks.</p>
         <p><strong>This week</strong>: for each player, the expected locked score from what's left of the week. This includes the games he has left, the chance he plays them (Out 0%, Doubtful 25%, Questionable 65%, Day-to-day 80%), and a finished game you can still lock. The best lineup maximises the total.</p>
         <p><strong>Lock-In</strong>: after a game, lock it if it beats the expected value of waiting for his remaining games. The bar rises with more games left and drops if he might miss games. If his next game has started, that game can no longer be locked. His last game of the week counts automatically.</p>
-        <p><strong>Waivers</strong>: for each free agent, the drop from your roster that improves your lineup value the most, and by how much.</p>
+        <p><strong>Waivers</strong>: rank by <em>rest of season</em> (best long-term add and drop) or by <em>this week / next 2 weeks</em> for short-term pickups. Short-term mode uses Sleeper's per-game weekly projections, which react to role changes like a starter getting hurt. It only suggests dropping one of your 4 lowest rest-of-season players and shows what that drop costs over the season.</p>
+        <p><strong>Weekly projections</strong>: Sleeper publishes a projection for every game this week and next. These set each player's level for this week's values and lock bars (80% weekly projection, 20% season level). They also feed the rest-of-season value, counting like 10 games of evidence alongside the preseason projection (15 games) and this season's actual games.</p>
         <p><strong>Trades</strong>: both teams' lineup value before and after, using the same values. A 2-for-1 credits the open roster spot with a typical free agent. "Helps both" means our model says neither side loses value. Real managers may value players by name or ADP, so the market column helps you pitch it.</p>
       </div>
     </section>

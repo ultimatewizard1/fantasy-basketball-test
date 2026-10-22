@@ -34,10 +34,24 @@ test('week value keeps a lockable game as a floor', () => {
   assert.equal(S.weekValue(30, 10, null, 0), 0);
 });
 
-test('season blend moves from projection toward actual production', () => {
+test('season blend moves from projection toward actual production and current role', () => {
   assert.equal(S.blendFpg(30, 20, 0), 30);
   assert.equal(S.blendFpg(30, 20, 15), 25);
   assert.ok(S.blendFpg(null, 35, 10) > 25);
+  // Bench player promoted to starter: 14 preseason, 23 this week.
+  const v = S.blendFpg(14, 18.5, 1, 23);
+  assert.ok(v > 17 && v < 18.5);
+  assert.equal(S.weekLevel([22, 23, 26], 15), 0.8 * (71 / 3) + 0.2 * 15);
+  assert.equal(S.weekLevel([], 15), 15);
+});
+
+test('short-term pickups only consider the drops offered and report the season cost', () => {
+  const mine = [{ id: 'a', pos: ['C'], h: 0, r: 900 }, { id: 'b', pos: ['C'], h: 10, r: 50 }];
+  const fa = [{ id: 'z', pos: ['C'], h: 40, r: 60 }];
+  const m = S.shortTermMoves(mine, fa, [mine[1]], C.DEFAULT_ROSTER, p => p.h, p => p.r, ctx);
+  assert.equal(m[0].drop.id, 'b');
+  assert.equal(m[0].gain, 30);
+  assert.ok(m[0].rosChange > 0);
 });
 
 function player(id, pos, v) { return { id, pos, v }; }

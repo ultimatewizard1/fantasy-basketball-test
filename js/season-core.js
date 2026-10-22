@@ -13,6 +13,8 @@
   var ESPN_TO_SLEEPER = { GS: 'GSW', NO: 'NOP', NY: 'NYK', SA: 'SAS', UTAH: 'UTA', WSH: 'WAS' };
   var FANTASY_WEEKS = 24;         // Sleeper weeks 1-24 (playoffs start week 22)
   var SEASON_PRIOR_GAMES = 15;    // projection counts like this many games of current-season data
+  var RECENT_PROJ_GAMES = 10;     // this week's projection (current role) counts like this many games
+  var WEEK_PROJ_WEIGHT = 0.8;     // short-term level: weekly projection vs rest-of-season level
   var UNKNOWN_PRIOR_FPG = 15;     // prior for players without a projection
   var BENCH_WEIGHT = 0.3;
   // Chance a player suits up for a game, by Sleeper/ESPN injury status.
@@ -116,12 +118,52 @@
 
   /* ---------------- rest-of-season values ---------------- */
 
-  // Blend preseason projection with this season's per-game production.
-  function blendFpg(projFpg, seasonFpg, gp) {
+  /*
+   * Rest-of-season FP/G: preseason projection, this season's production and
+   * the current weekly projection (which reflects role changes), weighted as
+   * 15 games, games played, and 10 games respectively.
+   */
+  function blendFpg(projFpg, seasonFpg, gp, recentFpg) {
     gp = num(gp);
-    if (projFpg == null) return gp > 0 ? (seasonFpg * gp + UNKNOWN_PRIOR_FPG * 5) / (gp + 5) : UNKNOWN_PRIOR_FPG;
-    if (!gp) return projFpg;
-    return (projFpg * SEASON_PRIOR_GAMES + seasonFpg * gp) / (SEASON_PRIOR_GAMES + gp);
+    var w = 0, t = 0;
+    if (projFpg != null) { t += projFpg * SEASON_PRIOR_GAMES; w += SEASON_PRIOR_GAMES; }
+    else { t += UNKNOWN_PRIOR_FPG * 5; w += 5; }
+    if (gp > 0) { t += seasonFpg * gp; w += gp; }
+    if (recentFpg != null) { t += recentFpg * RECENT_PROJ_GAMES; w += RECENT_PROJ_GAMES; }
+    return t / w;
+  }
+
+  // Short-term per-game level: mostly the weekly projection, anchored to the season level.
+  function weekLevel(projGames, rosFpg) {
+    if (!projGames || !projGames.length) return rosFpg;
+    var avg = projGames.reduce(function (s, g) { return s + g; }, 0) / projGames.length;
+    return WEEK_PROJ_WEIGHT * avg + (1 - WEEK_PROJ_WEIGHT) * rosFpg;
+  }
+
+  /*
+   * Short-term lineup gain from adding a free agent: best drop among my
+   * `candidates` (lowest rest-of-season value) by change in the horizon
+   * value of my starting lineup. Bench players don't score in Lock-In.
+   */
+  function shortTermMoves(mine, freeAgents, candidates, roster, horizonVal, rosVal, ctx) {
+    var slots = C.starterSlots(roster);
+    var lineup = function (list) {
+      var res = C.assign(list, slots, horizonVal), t = 0;
+      res.starters.forEach(function (s) { if (s.player) t += horizonVal(s.player); });
+      return t;
+    };
+    var base = lineup(mine);
+    var rosBase = teamValue(mine, roster, rosVal, ctx.fill, ctx.rosterSize);
+    return freeAgents.map(function (fa) {
+      var best = null;
+      candidates.forEach(function (d) {
+        var after = without(mine, [d]).concat([fa]);
+        var g = lineup(after) - base;
+        if (!best || g > best.gain) best = { drop: d, gain: g, after: after };
+      });
+      var rosChange = best ? teamValue(best.after, roster, rosVal, ctx.fill, ctx.rosterSize) - rosBase : 0;
+      return { add: fa, drop: best && best.drop, gain: best ? best.gain : 0, rosChange: rosChange };
+    }).sort(function (a, b) { return (b.gain - a.gain) || (horizonVal(b.add) - horizonVal(a.add)); });
   }
 
   /*
@@ -230,6 +272,8 @@
     lockDecision: lockDecision,
     weekValue: weekValue,
     blendFpg: blendFpg,
+    weekLevel: weekLevel,
+    shortTermMoves: shortTermMoves,
     rosValue: rosValue,
     teamValue: teamValue,
     evaluateTrade: evaluateTrade,
