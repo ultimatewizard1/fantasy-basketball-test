@@ -258,8 +258,113 @@
     }).sort(function (a, b) { return b.gain - a.gain; });
   }
 
+  /* ---------------- matchup simulation ---------------- */
+
+  // Small seeded RNG so every scenario sees the same random games
+  // (common random numbers make lock-vs-pass comparisons precise).
+  function mulberry32(a) {
+    return function () {
+      a |= 0; a = a + 0x6D2B79F5 | 0;
+      var t = Math.imul(a ^ a >>> 15, 1 | a);
+      t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+      return ((t ^ t >>> 14) >>> 0) / 4294967296;
+    };
+  }
+
+  function gaussFrom(r) { var u = 1 - r(), v = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+
+  // Lock bar for a game with `after` games still to come, shifted by `shift` sds
+  // (negative = lock sooner, safer; positive = hold out for a big game).
+  function lockBar(p, after, shift) { return waitValue(p.mu, p.sd, after, p.q) + (shift || 0) * p.sd; }
+
+  /*
+   * One simulated rest-of-week for a starter.
+   * p: { mu, sd, q, left, pending (lockable score or null), locked (score or null) }
+   * policy: { shift } (smart, bars shifted) | { never: true } | { eager: true } (lock anything >= average)
+   * decision: 'lock' | 'pass' | undefined for the pending game.
+   * draws: per remaining game { u, z } so scenarios share the same games.
+   */
+  function simulatePlayer(p, policy, decision, draws) {
+    if (p.locked != null) return p.locked;
+    var lockIt = function (score, after) {
+      if (policy.never) return false;
+      if (policy.eager) return score >= p.mu;
+      return score >= lockBar(p, after, policy.shift);
+    };
+    var last = p.pending; // if no later game is played, the last game played counts
+    if (p.pending != null) {
+      var lockNow = decision === 'lock' || (decision !== 'pass' && lockIt(p.pending, p.left));
+      if (lockNow || p.left === 0) return p.pending;
+    }
+    for (var k = p.left; k >= 1; k--) {
+      var d = draws[p.left - k];
+      if (d.u >= (p.q == null ? 1 : p.q)) continue; // sits this one out
+      var g = p.mu + p.sd * d.z;
+      last = g;
+      if (k === 1 || lockIt(g, k - 1)) return g;
+    }
+    return last == null ? 0 : last;
+  }
+
+  /*
+   * Monte Carlo of the rest of the week. Ties count as half a win.
+   * opts: { n, seed, myPolicy, oppPolicy, decisions: { playerId: 'lock' | 'pass' } }
+   */
+  function simulateMatchup(mine, theirs, opts) {
+    var n = opts.n || 5000, seed = opts.seed || 1;
+    var decisions = opts.decisions || {};
+    var wins = 0, sumA = 0, sumB = 0;
+    var all = mine.concat(theirs);
+    for (var i = 0; i < n; i++) {
+      var r = mulberry32(seed + i * 7919);
+      var a = 0, b = 0;
+      for (var j = 0; j < all.length; j++) {
+        var p = all[j], draws = [];
+        for (var k = 0; k < p.left; k++) draws.push({ u: r(), z: gaussFrom(r) });
+        if (j < mine.length) a += simulatePlayer(p, opts.myPolicy || {}, decisions[p.id], draws);
+        else b += simulatePlayer(p, opts.oppPolicy || {}, undefined, draws);
+      }
+      sumA += a; sumB += b;
+      wins += a > b ? 1 : a === b ? 0.5 : 0;
+    }
+    return { win: wins / n, mine: sumA / n, theirs: sumB / n };
+  }
+
+  var PLAN_SHIFTS = [-0.75, -0.5, -0.25, 0, 0.25, 0.5, 0.75];
+
+  /*
+   * What to do to win the week: how aggressive your lock bars should be,
+   * and lock-vs-pass win chances for every game you can lock right now.
+   */
+  function matchupPlan(mine, theirs, opts) {
+    opts = opts || {};
+    var base = { n: opts.n || 5000, seed: opts.seed || 1, oppPolicy: opts.oppPolicy || {} };
+    var sim = function (extra) { return simulateMatchup(mine, theirs, Object.assign({}, base, extra)); };
+    var shifts = PLAN_SHIFTS.map(function (sh) { return { shift: sh, result: sim({ myPolicy: { shift: sh } }) }; });
+    var best = shifts.reduce(function (a, b) {
+      if (b.result.win > a.result.win + 0.002) return b;
+      if (Math.abs(b.result.win - a.result.win) <= 0.002 && Math.abs(b.shift) < Math.abs(a.shift)) return b;
+      return a;
+    });
+    var policy = { shift: best.shift };
+    var decisions = mine.filter(function (p) { return p.pending != null && p.locked == null && p.left > 0; }).map(function (p) {
+      var d = {}, e = {};
+      d[p.id] = 'lock'; e[p.id] = 'pass';
+      var lock = sim({ myPolicy: policy, decisions: d }), pass = sim({ myPolicy: policy, decisions: e });
+      return { player: p, lockWin: lock.win, passWin: pass.win, bar: lockBar(p, p.left, best.shift), call: lock.win > pass.win ? 'lock' : 'pass' };
+    });
+    var bars = mine.filter(function (p) { return p.locked == null && p.left > 0; }).map(function (p) {
+      return { player: p, after: p.left - 1, bar: p.left > 1 ? lockBar(p, p.left - 1, best.shift) : null, standardBar: p.left > 1 ? lockBar(p, p.left - 1, 0) : null };
+    });
+    return { shifts: shifts, best: best, smart: shifts.filter(function (x) { return x.shift === 0; })[0], decisions: decisions, bars: bars };
+  }
+
   return {
     ESPN_TO_SLEEPER: ESPN_TO_SLEEPER,
+    lockBar: lockBar,
+    simulatePlayer: simulatePlayer,
+    simulateMatchup: simulateMatchup,
+    matchupPlan: matchupPlan,
     FANTASY_WEEKS: FANTASY_WEEKS,
     BENCH_WEIGHT: BENCH_WEIGHT,
     sleeperTeam: sleeperTeam,

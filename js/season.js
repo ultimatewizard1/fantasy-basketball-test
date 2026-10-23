@@ -65,12 +65,14 @@
         Sleeper.stats(out.league.season).then(function (x) { return C.normalizeStatsPayload(x.data); }).catch(function () { return {}; }),
         out.league.draft_id ? Sleeper.draft(out.league.draft_id).catch(function () { return null; }) : null,
         Sleeper.weekProjections(out.league.season, out.week).catch(function () { return []; }),
-        Sleeper.weekProjections(out.league.season, out.week + 1).catch(function () { return []; })
+        Sleeper.weekProjections(out.league.season, out.week + 1).catch(function () { return []; }),
+        Sleeper.matchups(cfg.leagueId, out.week).catch(function () { return []; })
       ]);
     }).then(function (r) {
       out.seasonStats = r[0];
       out.draft = r[1];
       out.weekProjRaw = { this: r[2] || [], next: r[3] || [] };
+      out.matchups = r[4] || [];
       st = out;
       pickMyTeam();
       buildValues();
@@ -219,6 +221,22 @@
 
   function myRoster() { return st.rosters.filter(function (r) { return r.roster_id === cfg.myRosterId; })[0]; }
 
+  // This week's matchup entries (Sleeper) for me and my opponent.
+  function myMatchup() {
+    var me = (st.matchups || []).filter(function (m) { return m.roster_id === cfg.myRosterId; })[0];
+    if (!me) return null;
+    var opp = st.matchups.filter(function (m) { return m.matchup_id === me.matchup_id && m.roster_id !== me.roster_id; })[0];
+    return { me: me, opp: opp };
+  }
+
+  // Players whose finished games we track: my roster and this week's opponent's.
+  function lockableIds() {
+    var ids = (myRoster().players || []).slice();
+    var mu = myMatchup();
+    if (mu && mu.opp) ids = ids.concat(mu.opp.players || mu.opp.starters || []);
+    return ids;
+  }
+
   function ownerName(r) {
     var u = st.users.filter(function (x) { return x.user_id === r.owner_id; })[0];
     return u ? (u.display_name || u.user_id) : 'Team ' + r.roster_id;
@@ -227,9 +245,8 @@
   /* ---------------- this week's games ---------------- */
 
   function loadBoxScores() {
-    var mine = myRoster();
     var teams = {};
-    rosterPlayers(mine).forEach(function (p) { teams[p.team] = 1; });
+    lockableIds().forEach(function (id) { var p = st.pool[id]; if (p) teams[p.team] = 1; });
     var wanted = st.games.filter(function (g) { return g.state !== 'pre' && g.teams.some(function (t) { return teams[t]; }); });
     st.box = {};
     return Promise.all(wanted.map(function (g) {
@@ -255,7 +272,7 @@
   // the week at this week's projected level, and next week's expected score.
   function computeWeek() {
     var mineIds = {};
-    (myRoster().players || []).forEach(function (id) { mineIds[id] = 1; });
+    lockableIds().forEach(function (id) { mineIds[id] = 1; });
     Object.keys(st.pool).forEach(function (id) {
       var p = st.pool[id];
       var key = p.team + '|' + C.normalizeName(p.name);
@@ -280,6 +297,9 @@
           if (list[i].state !== 'pre') break;
         }
       }
+      // Added mid-week: games before he joined your lineup can't be locked.
+      var ls = st.league ? lockState(id) : { type: 'auto' };
+      if (pending && ls.type === 'pickup' && ls.since && S.easternDate(new Date(pending.game.date)) < ls.since) pending = null;
       var q = S.playProb(p.injury);
       var upcoming = list.filter(function (x) { return x.state !== 'post' && x.proj; }).map(function (x) { return x.proj.fp; });
       var mu = S.weekLevel(upcoming.length ? upcoming : (p.projThis || []).map(function (x) { return x.fp; }), p.mu);
@@ -310,10 +330,125 @@
     $('partnerSelect').innerHTML = others.map(function (r) {
       return '<option value="' + r.roster_id + '"' + (r.roster_id === cfg.partnerRosterId ? ' selected' : '') + '>' + esc(ownerName(r)) + '</option>';
     }).join('');
+    renderMatchup();
     renderWeek();
     renderLock();
     renderWaivers();
     renderTradeRosters();
+  }
+
+  /* ---------------- matchup: what it takes to win the week ---------------- */
+
+  function lockState(id) {
+    var wk = (cfg.locks = cfg.locks || {})[st.league.season + '-' + st.week] || {};
+    return wk[id] || { type: 'auto' };
+  }
+
+  function setLockState(id, state) {
+    cfg.locks = cfg.locks || {};
+    var key = st.league.season + '-' + st.week;
+    cfg.locks[key] = cfg.locks[key] || {};
+    if (state.type === 'auto') delete cfg.locks[key][id]; else cfg.locks[key][id] = state;
+    save();
+  }
+
+  // Simulation input for one starter, honouring locks/pickups the user marked.
+  function simPlayer(id, sleeperPoints) {
+    var p = st.pool[id];
+    var w = p && p.week;
+    var ls = lockState(id);
+    var sp = {
+      id: id, name: p ? p.name : id, p: p,
+      mu: w ? w.mu : 0, sd: w ? w.sd : 1, q: w ? w.q : 1, left: w ? w.left : 0,
+      pending: w && w.pending ? w.pending.fp : null, locked: null, shown: sleeperPoints
+    };
+    if (ls.type === 'locked') { sp.locked = ls.score != null ? ls.score : (sp.pending != null ? sp.pending : sleeperPoints || 0); sp.left = 0; }
+    return sp;
+  }
+
+  var matchupTimer = null;
+
+  function renderMatchup() {
+    var mu = myMatchup();
+    if (!mu || !mu.opp) { $('matchupView').innerHTML = '<p class="muted">No matchup found for week ' + st.week + '.</p>'; return; }
+    var oppRoster = st.rosters.filter(function (r) { return r.roster_id === mu.opp.roster_id; })[0];
+    var mine = (mu.me.starters || []).map(function (id, i) { return simPlayer(id, (mu.me.starters_points || [])[i]); });
+    var theirs = (mu.opp.starters || []).map(function (id, i) { return simPlayer(id, (mu.opp.starters_points || [])[i]); });
+    var oppPolicy = { smart: {}, never: { never: true }, eager: { eager: true } }[cfg.oppPolicy || 'smart'];
+    $('matchupView').innerHTML = '<p class="muted">Simulating the rest of the week…</p>';
+    clearTimeout(matchupTimer);
+    matchupTimer = setTimeout(function () {
+      var plan = S.matchupPlan(mine, theirs, { n: 4000, oppPolicy: oppPolicy });
+      var best = plan.best;
+      var alt = ['smart', 'never', 'eager'].map(function (k) {
+        var pol = { smart: {}, never: { never: true }, eager: { eager: true } }[k];
+        return { k: k, win: S.simulateMatchup(mine, theirs, { n: 3000, myPolicy: { shift: best.shift }, oppPolicy: pol }).win };
+      });
+      // Expected locked score per starter under the plan.
+      var expect = function (sp, pol) {
+        var t = 0, n = 1500;
+        for (var i = 0; i < n; i++) {
+          var draws = [];
+          for (var k = 0; k < sp.left; k++) { var u = Math.random(), a = 1 - Math.random(), b = Math.random(); draws.push({ u: u, z: Math.sqrt(-2 * Math.log(a)) * Math.cos(2 * Math.PI * b) }); }
+          t += S.simulatePlayer(sp, pol, undefined, draws);
+        }
+        return t / n;
+      };
+      $('matchupView').innerHTML = matchupHtml(mu, oppRoster, mine, theirs, plan, alt, function (sp) { return expect(sp, { shift: best.shift }); }, function (sp) { return expect(sp, oppPolicy); });
+    }, 20);
+  }
+
+  function pct(x) { return Math.round(x * 100) + '%'; }
+
+  function modeText(shift) {
+    if (shift <= -0.25) return '<strong class="good">You\'re favored: play it safe.</strong> Lock good games sooner (bars ' + fmt(shift, 2) + ' × swing below normal).';
+    if (shift >= 0.25) return '<strong class="warnc">You\'re behind: chase upside.</strong> Hold out for big games (bars +' + fmt(shift, 2) + ' × swing above normal).';
+    return '<strong>Close matchup:</strong> use the standard bars.';
+  }
+
+  function statusControl(sp) {
+    var ls = lockState(sp.id);
+    return '<select data-lockstate="' + esc(sp.id) + '">' +
+      '<option value="auto"' + (ls.type === 'auto' ? ' selected' : '') + '>Not locked</option>' +
+      '<option value="locked"' + (ls.type === 'locked' ? ' selected' : '') + '>Locked</option>' +
+      '<option value="pickup"' + (ls.type === 'pickup' ? ' selected' : '') + '>Added mid-week</option></select>' +
+      (ls.type === 'locked' ? ' <input data-lockscore="' + esc(sp.id) + '" type="number" step="0.5" style="width:70px" value="' + esc(ls.score != null ? ls.score : (sp.pending != null ? sp.pending : sp.shown || 0)) + '">' : '') +
+      (ls.type === 'pickup' ? '<div class="small muted">in lineup since <input data-locksince="' + esc(sp.id) + '" type="date" value="' + esc(ls.since || st.today) + '" style="width:auto;padding:2px 4px"> (earlier games don\'t count)</div>' : '');
+  }
+
+  function lineupTable(list, expectFn) {
+    return '<table class="detail-table">' + list.map(function (sp) {
+      var p = sp.p;
+      var games = p && p.week ? gameChips(p) : '';
+      var cur = sp.locked != null ? '<strong class="good">' + fmt(sp.locked) + ' locked</strong>' : sp.pending != null ? fmt(sp.pending) + ' lockable' : (sp.shown ? fmt(sp.shown) + ' (Sleeper)' : '–');
+      return '<tr><td>' + (p ? nameCell(p) : esc(sp.name)) + '<div class="small">' + games + '</div></td><td class="num small">' + cur + '<br><span class="muted">exp ' + fmt(expectFn(sp)) + '</span></td><td>' + statusControl(sp) + '</td></tr>';
+    }).join('') + '</table>';
+  }
+
+  function matchupHtml(mu, oppRoster, mine, theirs, plan, alt, expMine, expTheirs) {
+    var best = plan.best;
+    var oppName = ownerName(oppRoster || { roster_id: mu.opp.roster_id });
+    var head = '<div class="card"><div class="row gap wrap" style="justify-content:space-between;align-items:center">' +
+      '<div><h2 style="margin:0">You vs ' + esc(oppName) + '</h2><div class="small muted">Week ' + st.week + ' · expected final: you ' + fmt(best.result.mine, 0) + ', them ' + fmt(best.result.theirs, 0) + '</div></div>' +
+      '<div style="text-align:right"><div style="font-size:30px;font-weight:700">' + pct(best.result.win) + '</div><div class="small muted">win chance with the plan below</div></div></div>' +
+      '<p>' + modeText(best.shift) + '</p>' +
+      '<p class="small muted">If they… lock smartly: ' + pct(alt[0].win) + ' · never lock: ' + pct(alt[1].win) + ' · lock anything above average: ' + pct(alt[2].win) +
+      '. Bar settings tested: ' + plan.shifts.map(function (x) { return (x.shift > 0 ? '+' : '') + x.shift + ' → ' + pct(x.result.win); }).join(', ') + '.</p></div>';
+    var dec = plan.decisions.length ? '<h3>Decide now: games you can lock</h3><div class="table-wrap"><table class="board"><thead><tr><th>Player</th><th class="num">Game</th><th class="num">Bar (this matchup)</th><th class="num">Win if LOCK</th><th class="num">Win if PASS</th><th>Call</th></tr></thead><tbody>' +
+      plan.decisions.sort(function (a, b) { return Math.abs(b.lockWin - b.passWin) - Math.abs(a.lockWin - a.passWin); }).map(function (d) {
+        var diff = Math.abs(d.lockWin - d.passWin);
+        return '<tr><td>' + nameCell(d.player.p || { id: d.player.id, name: d.player.name, team: '', pos: [] }) + '</td><td class="num">' + fmt(d.player.pending) + '</td><td class="num">' + fmt(d.bar) + '</td>' +
+          '<td class="num">' + pct(d.lockWin) + '</td><td class="num">' + pct(d.passWin) + '</td>' +
+          '<td>' + (diff < 0.005 ? '<span class="muted">Coin flip: either is fine</span>' : d.call === 'lock' ? '<strong class="good">LOCK</strong> (+' + fmt(100 * diff, 1) + ' pts of win%)' : '<strong class="warnc">PASS</strong> (+' + fmt(100 * diff, 1) + ' pts of win%)') + '</td></tr>';
+      }).join('') + '</tbody></table></div>' : '<p class="muted">No games to decide on right now (nothing finished and still lockable).</p>';
+    var bars = plan.bars.filter(function (b) { return b.bar != null; });
+    var barsHtml = bars.length ? '<h3>Bars for upcoming games</h3><p class="small muted">Lock his next game if it reaches the bar. Adjusted for this matchup; the standard bar is shown for comparison. His last game of the week counts automatically.</p><div class="table-wrap"><table class="board"><thead><tr><th>Player</th><th class="num">Games left</th><th class="num">Next-game bar</th><th class="num">Standard</th></tr></thead><tbody>' +
+      bars.map(function (b) {
+        return '<tr><td>' + nameCell(b.player.p || { id: b.player.id, name: b.player.name, team: '', pos: [] }) + '</td><td class="num">' + b.player.left + '</td><td class="num"><strong>' + fmt(b.bar) + '</strong></td><td class="num muted">' + fmt(b.standardBar) + '</td></tr>';
+      }).join('') + '</tbody></table></div>' : '';
+    var lineups = '<h3>Lineups</h3><p class="small muted">Sleeper doesn\'t publish locks. Mark what you and your opponent have locked, and any player added mid-week (his earlier games can\'t count), to make this exact. "exp" is his expected locked score.</p><div class="plan-grid">' +
+      '<div class="card"><h3>You</h3>' + lineupTable(mine, expMine) + '</div><div class="card"><h3>' + esc(oppName) + '</h3>' + lineupTable(theirs, expTheirs) + '</div></div>';
+    return head + dec + barsHtml + lineups;
   }
 
   function injTag(p) {
@@ -530,6 +665,25 @@
       });
     });
     $('refreshBtn').addEventListener('click', loadAll);
+    $('oppPolicy').value = cfg.oppPolicy || 'smart';
+    $('oppPolicy').addEventListener('change', function (e) { cfg.oppPolicy = e.target.value; save(); renderMatchup(); });
+    $('matchupView').addEventListener('change', function (e) {
+      var t = e.target;
+      if (t.dataset.lockstate) {
+        var id = t.dataset.lockstate, sp = st.pool[id];
+        var cur = sp && sp.week && sp.week.pending ? sp.week.pending.fp : null;
+        setLockState(id, t.value === 'locked' ? { type: 'locked', score: cur } : t.value === 'pickup' ? { type: 'pickup', since: st.today } : { type: t.value });
+        computeWeek();
+        renderMatchup();
+      } else if (t.dataset.locksince) {
+        setLockState(t.dataset.locksince, { type: 'pickup', since: t.value || st.today });
+        computeWeek();
+        renderMatchup();
+      } else if (t.dataset.lockscore) {
+        setLockState(t.dataset.lockscore, { type: 'locked', score: parseFloat(t.value) || 0 });
+        renderMatchup();
+      }
+    });
     $('teamSelect').addEventListener('change', function (e) {
       cfg.myRosterId = parseInt(e.target.value, 10);
       save();

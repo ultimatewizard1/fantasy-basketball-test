@@ -75,3 +75,33 @@ test('waiver moves pick the best drop', () => {
   assert.equal(m[0].drop.id, 'b');
   assert.ok(m[0].gain > 0);
 });
+
+test('matchup simulation: locked players are fixed, never-lockers keep their last game', () => {
+  const p = { id: 'a', mu: 30, sd: 10, q: 1, left: 2, pending: 50, locked: null };
+  assert.equal(S.simulatePlayer({ ...p, locked: 12 }, {}, undefined, []), 12);
+  const draws = [{ u: 0, z: -1 }, { u: 0, z: 0.5 }];
+  assert.equal(S.simulatePlayer(p, { never: true }, undefined, draws), 35);
+  assert.equal(S.simulatePlayer(p, {}, undefined, draws), 50); // 50 beats the bar: smart lock
+  assert.equal(S.simulatePlayer(p, {}, 'pass', draws), 35);    // passed: lock bar for 1 left is 30, 20 fails, 35 counts
+  // Sits out his remaining games after passing: the last game played (the pending one) counts.
+  assert.equal(S.simulatePlayer({ ...p, q: 0.5 }, {}, 'pass', [{ u: 0.99, z: 0 }, { u: 0.99, z: 0 }]), 50);
+});
+
+test('matchup plan: safer when ahead, more aggressive when behind', () => {
+  const me = id => ({ id, mu: 30, sd: 10, q: 1, left: 3, pending: null, locked: null });
+  const mine = [me('a'), me('b'), me('c')];
+  const ahead = S.matchupPlan(mine, [{ id: 'x', locked: 90, left: 0 }], { n: 3000 });
+  const behind = S.matchupPlan(mine, [{ id: 'x', locked: 135, left: 0 }], { n: 3000 });
+  assert.ok(ahead.best.result.win > 0.5 && behind.best.result.win < 0.5);
+  assert.ok(ahead.best.shift < 0, 'ahead: lock sooner');
+  assert.ok(behind.best.shift > 0, 'behind: hold out for big games');
+});
+
+test('matchup plan: lock-vs-pass call depends on the standing', () => {
+  const p = { id: 'a', mu: 30, sd: 10, q: 1, left: 2, pending: 32, locked: null };
+  const fixed = { id: 'b', locked: 30, left: 0 };
+  const ahead = S.matchupPlan([p, fixed], [{ id: 'x', locked: 50, left: 0 }], { n: 4000 });
+  const behind = S.matchupPlan([p, fixed], [{ id: 'x', locked: 75, left: 0 }], { n: 4000 });
+  assert.equal(ahead.decisions[0].call, 'lock');   // 62 already beats 50: bank it
+  assert.equal(behind.decisions[0].call, 'pass');  // need 45+ from him: chase it
+});
