@@ -328,6 +328,12 @@
 
   function normPdf(z) { return Math.exp(-z * z / 2) / Math.sqrt(2 * Math.PI); }
 
+  // E[max(X, c)] for X ~ Normal(mu, sd).
+  function expectedMax(mu, sd, c) {
+    var z = (c - mu) / sd;
+    return c + sd * (normPdf(z) - z * (1 - normCdf(z)));
+  }
+
   function lockInValue(mu, sd, n) {
     var v = mu;
     for (var i = 1; i < n; i++) {
@@ -648,6 +654,7 @@
     looksPerGame: looksPerGame,
     estimateBonuses: estimateBonuses,
     lockInValue: lockInValue,
+    expectedMax: expectedMax,
     weeklyLockIn: weeklyLockIn,
     lockInWeeks: lockInWeeks,
     applyLockIn: applyLockIn,

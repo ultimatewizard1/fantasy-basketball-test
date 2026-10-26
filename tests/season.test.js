@@ -105,3 +105,15 @@ test('matchup plan: lock-vs-pass call depends on the standing', () => {
   assert.equal(ahead.decisions[0].call, 'lock');   // 62 already beats 50: bank it
   assert.equal(behind.decisions[0].call, 'pass');  // need 45+ from him: chase it
 });
+
+test('per-game play chances: back-to-backs lower the value of waiting', () => {
+  // All games certain: same as the standard optimal-stopping value.
+  assert.ok(Math.abs(S.sequenceValue(30, 10, [1, 1, 1]) - C.lockInValue(30, 10, 3)) < 1e-9);
+  assert.ok(Math.abs(S.waitValue(30, 10, 2, [1, 1, 1]) - C.lockInValue(30, 10, 2)) < 1e-9);
+  const qs = S.gamePlayProbs(0.97, ['2026-10-27', '2026-10-28', '2026-10-31']);
+  assert.deepEqual(qs.map(q => +q.toFixed(4)), [0.97, +(0.97 * S.B2B_PLAY_FACTOR).toFixed(4), 0.97]);
+  assert.ok(S.sequenceValue(30, 10, qs) < S.sequenceValue(30, 10, [0.97, 0.97, 0.97]));
+  // The simulation uses each game's own chance.
+  const p = { id: 'a', mu: 30, sd: 10, left: 2, qs: [0, 1], pending: null, locked: null };
+  assert.equal(S.simulatePlayer(p, {}, undefined, [{ u: 0.5, z: 2 }, { u: 0.5, z: 0 }]), 30);
+});

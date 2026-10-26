@@ -304,14 +304,20 @@
       var upcoming = list.filter(function (x) { return x.state !== 'post' && x.proj; }).map(function (x) { return x.proj.fp; });
       var mu = S.weekLevel(upcoming.length ? upcoming : (p.projThis || []).map(function (x) { return x.fp; }), p.mu);
       var sd = C.effectiveSd(mu, p.cv);
+      // Per-game play chances for his remaining games: lower on the 2nd night of a back-to-back.
+      var etDay = function (x) { return S.easternDate(new Date(x.game.date)); };
+      var qs = S.gamePlayProbs(q, list.filter(function (x) { return x.state !== 'post'; }).map(etDay), list.map(etDay));
       var muNext = S.weekLevel((p.projNext || []).map(function (x) { return x.fp; }), p.mu);
       var next;
-      if (p.projNext && p.projNext.length) next = C.lockInValue(muNext, C.effectiveSd(muNext, p.cv), p.projNext.length);
-      else if (!(p.projThis && p.projThis.length)) next = p.weekly * q; // not in weekly projections: season level
+      if (p.projNext && p.projNext.length) {
+        // Projected next week, so expected back by then even if out now.
+        var qsNext = S.gamePlayProbs(Math.max(q, 0.8), p.projNext.map(function (x) { return x.date; }));
+        next = S.waitValue(muNext, C.effectiveSd(muNext, p.cv), qsNext.length, qsNext);
+      } else if (!(p.projThis && p.projThis.length)) next = p.weekly * q; // not in weekly projections: season level
       else next = 0; // projected this week but not next: expected out
       p.week = {
-        games: list, left: left + (live ? 1 : 0), pending: pending, q: q, live: live, mu: mu, sd: sd,
-        value: S.weekValue(mu, sd, pending ? pending.fp : null, left + (live ? 1 : 0), q),
+        games: list, left: left + (live ? 1 : 0), pending: pending, q: q, qs: qs, live: live, mu: mu, sd: sd,
+        value: S.weekValue(mu, sd, pending ? pending.fp : null, left + (live ? 1 : 0), qs),
         muNext: muNext, next: next, nextGames: (p.projNext || []).length
       };
     });
@@ -359,7 +365,7 @@
     var ls = lockState(id);
     var sp = {
       id: id, name: p ? p.name : id, p: p,
-      mu: w ? w.mu : 0, sd: w ? w.sd : 1, q: w ? w.q : 1, left: w ? w.left : 0,
+      mu: w ? w.mu : 0, sd: w ? w.sd : 1, q: w ? w.q : 1, qs: w ? w.qs : null, left: w ? w.left : 0,
       pending: w && w.pending ? w.pending.fp : null, locked: null, shown: sleeperPoints
     };
     if (ls.type === 'locked') { sp.locked = ls.score != null ? ls.score : (sp.pending != null ? sp.pending : sleeperPoints || 0); sp.left = 0; }
@@ -464,7 +470,8 @@
   function gameChips(p) {
     return p.week.games.map(function (x) {
       var label = dayLabel(x.game.date);
-      if (x.state === 'pre') return '<span class="pick-pill" title="Sleeper projection">' + label + (x.proj ? ' · proj ' + fmt(x.proj.fp, 0) : '') + '</span>';
+      var b2b = p.week && p.week.games.some(function (y) { return S.easternDate(new Date(y.game.date)) === S.addDays(S.easternDate(new Date(x.game.date)), -1); });
+      if (x.state === 'pre') return '<span class="pick-pill" title="Sleeper projection' + (b2b ? '; 2nd night of a back-to-back: a bit more likely to rest' : '') + '">' + label + (b2b ? ' (B2B)' : '') + (x.proj ? ' · proj ' + fmt(x.proj.fp, 0) : '') + '</span>';
       if (x.state === 'in') return '<span class="pick-pill next">' + label + ' live</span>';
       if (x.dnp) return '<span class="pick-pill done">' + label + ' DNP</span>';
       return '<span class="pick-pill' + (p.week.pending === x ? ' next' : '') + '">' + label + ': <strong>' + fmt(x.fp) + '</strong></span>';
@@ -521,16 +528,16 @@
       var verdict, cls = '';
       if (w.pending && w.left === 0) { verdict = 'Last game of his week: <strong>' + fmt(w.pending.fp) + '</strong> counts automatically.'; cls = 'muted'; }
       else if (w.pending) {
-        var d = S.lockDecision(p.week.mu, p.week.sd, w.pending.fp, w.left, w.q);
+        var d = S.lockDecision(p.week.mu, p.week.sd, w.pending.fp, w.left, w.qs);
         verdict = (d.lock ? '<strong class="good">LOCK</strong>' : '<strong class="warnc">PASS</strong>') + ': scored <strong>' + fmt(w.pending.fp) + '</strong>, the bar with ' + w.left + ' game' + (w.left === 1 ? '' : 's') + ' left is <strong>' + fmt(d.threshold) + '</strong>' +
           (w.q < 0.95 ? ' (lowered: ' + esc(p.injury) + ')' : '') + '. Decide before his next game tips off.';
       } else if (w.live) verdict = 'Game in progress. Check back after it ends.';
       else if (!w.games.length) verdict = 'No games this week. Consider benching him.';
       else if (w.games.every(function (x) { return x.state === 'pre'; })) verdict = w.left > 1
-        ? 'First game ' + dayLabel(w.games[0].game.date) + '. Lock it if it reaches <strong>' + fmt(S.lockDecision(p.week.mu, p.week.sd, 0, w.left - 1, w.q).threshold) + '</strong>; otherwise wait.'
+        ? 'First game ' + dayLabel(w.games[0].game.date) + '. Lock it if it reaches <strong>' + fmt(S.lockDecision(p.week.mu, p.week.sd, 0, w.left - 1, w.qs).threshold) + '</strong>; otherwise wait.'
         : 'Only one game this week (' + dayLabel(w.games[0].game.date) + '). It counts automatically.';
       else verdict = w.left > 1
-        ? 'His last finished game can no longer be locked (a later game started). Bar for his next game: <strong>' + fmt(S.lockDecision(p.week.mu, p.week.sd, 0, w.left - 1, w.q).threshold) + '</strong>.'
+        ? 'His last finished game can no longer be locked (a later game started). Bar for his next game: <strong>' + fmt(S.lockDecision(p.week.mu, p.week.sd, 0, w.left - 1, w.qs).threshold) + '</strong>.'
         : 'His last finished game can no longer be locked. His final game this week counts automatically.';
       return '<div class="card"><div class="row gap wrap" style="justify-content:space-between"><div>' + nameCell(p) + ' <span class="pos">' + esc(p.pos.join('/')) + '</span></div><div class="small muted">this week ' + fmt(p.week.mu) + ' FP/G' + (Math.abs(p.week.mu - p.mu) >= 1 ? ' (season ' + fmt(p.mu) + ')' : '') + ' · swing ±' + fmt(p.week.sd) + '</div></div>' +
         '<div style="margin:6px 0">' + gameChips(p) + '</div><div class="' + cls + '">' + verdict + '</div></div>';

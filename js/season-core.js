@@ -18,6 +18,10 @@
   var UNKNOWN_PRIOR_FPG = 15;     // prior for players without a projection
   var BENCH_WEIGHT = 0.3;
   // Chance a player suits up for a game, by Sleeper/ESPN injury status.
+  // Players sat ~6 points more often on the 2nd night of a back-to-back in
+  // 2025-26 (stars 19.5% vs 13.9%, others 23.3% vs 16.8%); per-game
+  // projections don't account for it.
+  var B2B_PLAY_FACTOR = 0.93;
   var PLAY_PROB = { out: 0, suspended: 0, doubtful: 0.25, questionable: 0.65, 'day-to-day': 0.8, probable: 0.95 };
 
   function num(v) { var n = parseFloat(v); return isFinite(n) ? n : 0; }
@@ -79,15 +83,37 @@
 
   /* ---------------- Lock-In decisions ---------------- */
 
-  // Value of passing now with `left` games still to come (each played with prob q).
+  /*
+   * Value of passing now with `left` games still to come. q is the chance he
+   * plays each game, or an array of per-game chances (the last `left` entries
+   * are used), e.g. lower on the 2nd night of a back-to-back.
+   */
   function waitValue(mu, sd, left, q) {
     if (left <= 0) return 0;
+    if (Array.isArray(q)) return sequenceValue(mu, sd, q.slice(Math.max(0, q.length - left)));
     q = q == null ? 1 : q;
     if (q >= 0.999) return C.lockInValue(mu, sd, left);
     // Unknown availability: average over how many of the games he plays.
     var total = 0;
     for (var k = 1; k <= left; k++) total += binom(left, k, q) * C.lockInValue(mu, sd, k);
     return total; // playing none of them scores 0
+  }
+
+  // Optimal lock-or-pass value over games played with chances qs (in order).
+  function sequenceValue(mu, sd, qs) {
+    var v = 0;
+    for (var i = qs.length - 1; i >= 0; i--) {
+      var cont = i === qs.length - 1 ? mu : C.expectedMax(mu, sd, v);
+      v = qs[i] * cont + (1 - qs[i]) * v;
+    }
+    return v;
+  }
+
+  // Per-game play chances given dates (YYYY-MM-DD, in order) and the team's game dates.
+  function gamePlayProbs(base, dates, teamDates) {
+    var set = {};
+    (teamDates || dates).forEach(function (d) { set[d] = 1; });
+    return dates.map(function (d) { return set[addDays(d, -1)] ? base * B2B_PLAY_FACTOR : base; });
   }
 
   function binom(n, k, p) {
@@ -275,7 +301,7 @@
 
   // Lock bar for a game with `after` games still to come, shifted by `shift` sds
   // (negative = lock sooner, safer; positive = hold out for a big game).
-  function lockBar(p, after, shift) { return waitValue(p.mu, p.sd, after, p.q) + (shift || 0) * p.sd; }
+  function lockBar(p, after, shift) { return waitValue(p.mu, p.sd, after, p.qs || p.q) + (shift || 0) * p.sd; }
 
   /*
    * One simulated rest-of-week for a starter.
@@ -298,7 +324,8 @@
     }
     for (var k = p.left; k >= 1; k--) {
       var d = draws[p.left - k];
-      if (d.u >= (p.q == null ? 1 : p.q)) continue; // sits this one out
+      var q = p.qs && p.qs.length === p.left ? p.qs[p.left - k] : (p.q == null ? 1 : p.q);
+      if (d.u >= q) continue; // sits this one out
       var g = p.mu + p.sd * d.z;
       last = g;
       if (k === 1 || lockIt(g, k - 1)) return g;
@@ -368,6 +395,9 @@
     FANTASY_WEEKS: FANTASY_WEEKS,
     BENCH_WEIGHT: BENCH_WEIGHT,
     sleeperTeam: sleeperTeam,
+    B2B_PLAY_FACTOR: B2B_PLAY_FACTOR,
+    sequenceValue: sequenceValue,
+    gamePlayProbs: gamePlayProbs,
     playProb: playProb,
     easternDate: easternDate,
     addDays: addDays,
