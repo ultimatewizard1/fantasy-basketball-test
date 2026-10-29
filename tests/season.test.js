@@ -54,6 +54,22 @@ test('short-term pickups only consider the drops offered and report the season c
   assert.ok(m[0].rosChange > 0);
 });
 
+test('short-term pickups: shortfall when he would not start, each week its own lineup', () => {
+  // A full lineup of 20s at every slot; bench players worth little.
+  const mine = [];
+  for (let i = 0; i < 10; i++) mine.push({ id: 's' + i, pos: ['PG', 'SG', 'SF', 'PF', 'C'], h: 20, n: 20, r: 900 });
+  for (let i = 0; i < 3; i++) mine.push({ id: 'b' + i, pos: ['C'], h: 5, n: 5, r: 100 + i });
+  const thisWk = p => p.h, nextWk = p => p.n;
+  const fa = { id: 'z', pos: ['C'], h: 17, n: 26, r: 200 };
+  const one = S.shortTermMoves(mine, [fa], mine.slice(10), C.DEFAULT_ROSTER, [thisWk], p => p.r, ctx)[0];
+  assert.equal(one.starts, false);
+  assert.equal(one.gain, -3); // 3 short of the weakest starter
+  // Next week he'd start (+6) even though he wouldn't this week.
+  const two = S.shortTermMoves(mine, [fa], mine.slice(10), C.DEFAULT_ROSTER, [thisWk, nextWk], p => p.r, ctx)[0];
+  assert.equal(two.starts, true);
+  assert.equal(two.gain, 6);
+});
+
 function player(id, pos, v) { return { id, pos, v }; }
 const ctx = { roster: C.DEFAULT_ROSTER, rosterSize: 13, val: p => p.v, fill: 100 };
 

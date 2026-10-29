@@ -592,13 +592,15 @@
     else {
       // Short-term pickups: only consider dropping my 4 lowest rest-of-season players.
       var cands = mine.slice().sort(function (a, b) { return a.ros - b.ros; }).slice(0, 4);
-      moves = S.shortTermMoves(mine, fas, cands, st.roster, hv, function (p) { return p.ros || 0; }, waiverCtx());
+      var thisWeek = function (p) { return p.week ? p.week.value : 0; };
+      var nextWeek = function (p) { return p.week ? p.week.next : 0; };
+      moves = S.shortTermMoves(mine, fas, cands, st.roster, horizon === 'two' ? [thisWeek, nextWeek] : [thisWeek], function (p) { return p.ros || 0; }, waiverCtx());
     }
     moves = moves.slice(0, 30);
     var help = {
       ros: 'Gain = change in your team\'s rest-of-season lineup value if you add him and drop the suggested player.',
-      this: 'Gain = extra expected locked points in your starting lineup for the rest of this week, dropping one of your 4 lowest rest-of-season players. "Season cost" is what that drop costs over the rest of the season.',
-      two: 'Gain = extra expected locked points in your starting lineup over the rest of this week plus next week, dropping one of your 4 lowest rest-of-season players. "Season cost" is what that drop costs over the rest of the season.'
+      this: 'Gain = extra expected locked points in your starting lineup for the rest of this week, dropping one of your 4 lowest rest-of-season players. A <span class="bad">negative</span> gain means he wouldn\'t crack your lineup (bench players don\'t score in Lock-In): it\'s how far short he falls of the starter he\'d replace. "Season cost" is what that drop costs over the rest of the season.',
+      two: 'Gain = extra expected locked points in your starting lineups for the rest of this week plus next week (each week gets its own best lineup), dropping one of your 4 lowest rest-of-season players. A <span class="bad">negative</span> gain means he wouldn\'t start in either week: it\'s how far short he falls. "Season cost" is what that drop costs over the rest of the season.'
     }[horizon];
     $('waiverView').innerHTML = '<p class="muted small">' + help + ' FP/G blends his preseason projection, this season\'s games and this week\'s projection.</p>' +
       '<div class="table-wrap"><table class="board"><thead><tr><th>Add</th><th>Pos</th><th class="num" title="Projected FP per game this week (Sleeper)">This wk FP/G</th><th class="num" title="Expected locked points, rest of this week">This wk</th><th class="num" title="Expected locked points next week">Next wk</th><th class="num" title="Rest-of-season FP/G">FP/G</th><th class="num">Season (GP)</th><th class="num">ROS</th><th>Drop</th><th class="num">Gain</th>' + (horizon === 'ros' ? '' : '<th class="num">Season cost</th>') + '</tr></thead><tbody>' +
@@ -607,7 +609,7 @@
         return '<tr' + (m.gain > 0 ? ' class="rec"' : '') + '><td>' + nameCell(p) + '</td><td class="pos">' + esc(p.pos.join('/')) + '</td>' +
           '<td class="num">' + fmt(p.week.mu) + '</td><td class="num">' + fmt(p.week.value) + '</td><td class="num">' + fmt(p.week.next) + '</td><td class="num">' + fmt(p.mu) + '</td>' +
           '<td class="num">' + (p.gp ? fmt(p.seasonFpg) + ' (' + p.gp + ')' : '–') + '</td><td class="num">' + fmt(p.ros, 0) + '</td>' +
-          '<td>' + (m.drop ? esc(m.drop.name) : '–') + '</td><td class="num ' + (m.gain > 0 ? 'good' : 'bad') + '">' + (m.gain > 0 ? '+' : '') + fmt(m.gain, horizon === 'ros' ? 0 : 1) + '</td>' +
+          '<td>' + (m.drop ? esc(m.drop.name) : '–') + '</td><td class="num ' + (m.gain > 0 ? 'good' : 'bad') + '"' + (horizon !== 'ros' && !m.starts ? ' title="Wouldn\'t start: ' + fmt(-m.gain) + ' short of the starter he\'d replace"' : '') + '>' + (m.gain > 0 ? '+' : '') + fmt(m.gain, horizon === 'ros' ? 0 : 1) + '</td>' +
           (horizon === 'ros' ? '' : '<td class="num ' + (m.rosChange >= 0 ? 'good' : 'bad') + '">' + (m.rosChange >= 0 ? '+' : '') + fmt(m.rosChange, 0) + '</td>') + '</tr>';
       }).join('') + '</tbody></table></div>';
   }

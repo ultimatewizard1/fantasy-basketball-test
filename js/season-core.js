@@ -168,15 +168,24 @@
 
   /*
    * Short-term lineup gain from adding a free agent: best drop among my
-   * `candidates` (lowest rest-of-season value) by change in the horizon
-   * value of my starting lineup. Bench players don't score in Lock-In.
+   * `candidates` (lowest rest-of-season value) by change in the value of my
+   * starting lineups. Bench players don't score in Lock-In. weekVals is one
+   * valuation per week (or a single function); each week gets its own best
+   * lineup, so a pickup can start next week without starting this week.
+   * A free agent who wouldn't start in any week gets a negative gain: how
+   * much the lineup would lose if he started anyway (his shortfall).
    */
-  function shortTermMoves(mine, freeAgents, candidates, roster, horizonVal, rosVal, ctx) {
+  function shortTermMoves(mine, freeAgents, candidates, roster, weekVals, rosVal, ctx) {
     var slots = C.starterSlots(roster);
-    var lineup = function (list) {
-      var res = C.assign(list.filter(function (p) { return !p.onIR; }), slots, horizonVal), t = 0;
-      res.starters.forEach(function (s) { if (s.player) t += horizonVal(s.player); });
-      return t;
+    var weeks = Array.isArray(weekVals) ? weekVals : [weekVals];
+    var total = function (p) { return weeks.reduce(function (t, val) { return t + val(p); }, 0); };
+    var lineup = function (list, force) {
+      var active = list.filter(function (p) { return !p.onIR; });
+      return weeks.reduce(function (t, val) {
+        var v = force ? function (p) { return p === force ? val(p) + 1e6 : val(p); } : val;
+        C.assign(active, slots, v).starters.forEach(function (s) { if (s.player) t += val(s.player); });
+        return t;
+      }, 0);
     };
     var base = lineup(mine);
     var rosBase = teamValue(mine, roster, rosVal, ctx.fill, ctx.rosterSize);
@@ -185,11 +194,13 @@
       candidates.forEach(function (d) {
         var after = without(mine, [d]).concat([fa]);
         var g = lineup(after) - base;
-        if (!best || g > best.gain) best = { drop: d, gain: g, after: after };
+        var starts = g > 1e-9;
+        if (!starts) g = Math.min(0, lineup(after, fa) - base);
+        if (!best || g > best.gain) best = { drop: d, gain: g, starts: starts, after: after };
       });
       var rosChange = best ? teamValue(best.after, roster, rosVal, ctx.fill, ctx.rosterSize) - rosBase : 0;
-      return { add: fa, drop: best && best.drop, gain: best ? best.gain : 0, rosChange: rosChange };
-    }).sort(function (a, b) { return (b.gain - a.gain) || (horizonVal(b.add) - horizonVal(a.add)); });
+      return { add: fa, drop: best && best.drop, gain: best ? best.gain : 0, starts: !!(best && best.starts), rosChange: rosChange };
+    }).sort(function (a, b) { return (b.gain - a.gain) || (total(b.add) - total(a.add)); });
   }
 
   /*
