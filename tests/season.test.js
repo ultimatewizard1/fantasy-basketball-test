@@ -212,7 +212,7 @@ test('calibration: projection bias correction and single-game spread', () => {
 });
 
 test('locks read from Sleeper: earlier game counted after a later one was played', () => {
-  const g = (state, fp, extra) => Object.assign({ state, fps: [fp, fp] }, extra);
+  const g = (state, fp, extra) => Object.assign({ state, fps: [fp, fp], settled: state === 'post' }, extra);
   // Giannis: 40.5 Monday, 36 Wednesday, Sleeper counts 40.5 -> Monday is locked.
   assert.deepEqual(S.detectLock([g('post', 40.5), g('post', 36)], 40.5), { status: 'locked', score: 40.5, index: 0 });
   // Counts his latest game: locked or not, Sleeper can't show it yet.
@@ -224,6 +224,9 @@ test('locks read from Sleeper: earlier game counted after a later one was played
   assert.equal(S.detectLock([g('post', 20), { state: 'in', fps: [null, null] }], 20).status, 'unknown');
   // Matches only Sleeper's own score (e.g. a technical foul ESPN's box score lacks).
   assert.equal(S.detectLock([{ state: 'post', fps: [27, 25] }, g('post', 31)], 25).status, 'locked');
+  // The later game just ended and Sleeper hasn't processed it: not evidence of a lock yet.
+  assert.equal(S.detectLock([g('post', 40.5), g('post', 36, { settled: false })], 40.5).waiting, true);
+  assert.equal(S.detectLock([g('post', 40.5), g('post', 36, { settled: false })], 40.5).status, 'unknown');
   // Pickups: latest completed add per player.
   const pk = S.pickupTimes([{ status: 'complete', adds: { 9: 2 }, status_updated: 100 }, { status: 'complete', adds: { 9: 3 }, status_updated: 200 }, { status: 'failed', adds: { 9: 4 }, status_updated: 300 }]);
   assert.deepEqual(pk['9'], { roster: 3, at: 200 });

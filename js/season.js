@@ -367,7 +367,7 @@
       }
       if (mineIds[id]) {
         st.autoLock[id] = S.detectLock(list.filter(function (x) { return !x.beforePickup; }).map(function (x) {
-          return { state: x.state, dnp: x.dnp, fps: [x.fp, x.fpSleeper] };
+          return { state: x.state, dnp: x.dnp, fps: [x.fp, x.fpSleeper], settled: x.state === 'post' && Date.now() - Date.parse(x.game.date) > SETTLE_MS };
         }), st.shown[id]);
       }
       // Added mid-week (marked by hand): games before he joined your lineup can't be locked.
@@ -421,6 +421,9 @@
   }
 
   /* ---------------- matchup: what it takes to win the week ---------------- */
+
+  // Sleeper's matchup scores catch up with finished games within a few hours; trust them the morning after.
+  var SETTLE_MS = 12 * 3600 * 1000;
 
   // Your manual setting if any, else what Sleeper's data shows (a lock or a mid-week pickup).
   function lockState(id) {
@@ -521,7 +524,8 @@
     var ls = lockState(sp.id);
     var det = (st.autoLock || {})[sp.id] || {};
     var autoLabel = det.status === 'locked' ? 'Sleeper: locked ' + fmt(det.score) : autoPickup(sp.id) ? 'Sleeper: added mid-week' :
-      det.status === 'open' ? 'Sleeper: not locked' : det.status === 'unknown' && det.index != null ? 'Sleeper: latest game counts (lock not visible yet)' : 'Sleeper: nothing locked';
+      det.status === 'open' ? 'Sleeper: not locked' : det.waiting ? 'Sleeper: still processing his last game' :
+      det.status === 'unknown' && det.index != null ? 'Sleeper: latest game counts (a lock on it shows once he plays again)' : 'Sleeper: nothing locked';
     return '<select data-lockstate="' + esc(sp.id) + '">' +
       '<option value="auto"' + (ls.auto || ls.type === 'auto' ? ' selected' : '') + '>' + esc(autoLabel) + '</option>' +
       '<option value="open"' + (ls.type === 'open' ? ' selected' : '') + '>Not locked</option>' +

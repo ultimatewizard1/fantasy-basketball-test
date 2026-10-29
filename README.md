@@ -87,8 +87,12 @@ browser access; The Odds API needs a paid key for this volume.
 **Locks and pickups from Sleeper.** Sleeper doesn't publish locks directly, but each matchup lists
 the score every player currently counts. If that equals an *earlier* game even though he has played
 since, that game is locked. Both teams' locks are read this way, matched against ESPN box scores and
-Sleeper's own box scores (which include technical fouls). One limit: a lock on a player's *latest*
-game looks the same as not locking until his next game starts. Mark those by hand if you know them.
+Sleeper's own box scores (which include technical fouls). Two limits:
+- **Sleeper lags:** for a few hours after a game ends, Sleeper can still show the player's
+  previous game. On 10/28 at 10:55 pm ET, Giannis, Flagg and Durant all still showed Monday's
+  score. So a lock is only inferred once his later game is about 12 hours old (the morning after).
+- **Locks on the latest game:** a lock on a player's latest game looks the same as not locking
+  until his next game has been played. Mark those by hand if you know them.
 Mid-week pickups come from the league's transactions; games that tipped before the pickup don't count.
 
 **Roster spots and IR.** When a trade leaves you over the roster limit, your lowest-valued players
@@ -222,7 +226,7 @@ to April, so every number below is out of sample.
 Sleeper deletes each prop line when its game tips off, and its projection archive keeps only the
 final version. So a GitHub Actions job (`.github/workflows/collect-lines.yml`) saves both on a
 schedule:
-- **When:** every 2 hours from 9 am to 11 pm ET.
+- **When:** every 2 hours from 9 am to 11 pm ET, plus 1, 3 and 7 am ET.
 - **What:** `scripts/collect_lines.py` downloads Sleeper's NBA prop lines and this week's per-game
   projections.
 - **Where:** the **`data-snapshots`** branch, never `main`, so your copy of the tool and its
@@ -230,11 +234,13 @@ schedule:
   - `lines/<game date>.json`: the first line seen and the last one before tip-off, for each
     player and stat.
   - `projections/<date>.json`: Sleeper's projection that day for every game not yet played.
+  - `matchups/<date>.json`: the score each starter counts in this league's matchups at every run.
+    This shows how long Sleeper takes to apply a finished game, which lock detection depends on.
 
 After a few weeks, these show how betting lines, early projections and final projections compare
 with actual results. That will set the line weight (now 70%) and how much to trust projections
 made days ahead.
-- **Cost:** about 240 of the 2,000 free Actions minutes a month for a private repo.
+- **Cost:** about 330 of the 2,000 free Actions minutes a month for a private repo.
 - **To stop it:** GitHub → **Actions** → *Collect Sleeper lines* → **⋯** → **Disable workflow**.
 
 ## Tests

@@ -103,6 +103,11 @@
    * - Counted score is live points: not locked.
    * - Equal to his latest game with nothing played since: can't tell yet
    *   (Sleeper only shows the difference once his next game starts).
+   * Sleeper's matchup scores lag the box scores: for a few hours after a game
+   * ends it can still show his previous game (on 10/28, Giannis, Flagg and
+   * Durant all showed Monday's score at 10:55 pm ET, then switched to
+   * Wednesday's). So a later game only counts as evidence once it's settled
+   * (g.settled: about 12 hours after tip-off).
    */
   function detectLock(games, shown) {
     if (shown == null) return { status: 'unknown' };
@@ -114,6 +119,8 @@
       // Later games he actually played (a DNP doesn't change what counts).
       var later = games.slice(i + 1).filter(function (x) { return x.state !== 'pre' && !x.dnp; });
       if (!later.length) return { status: 'unknown', index: i };
+      // Sleeper may not have processed the later game yet.
+      if (!later.every(function (x) { return x.settled; })) return { status: 'unknown', index: i, waiting: true };
       if (later.some(near)) return { status: 'unknown', index: i };
       // A game that just tipped with no stats yet can't tell us anything.
       if (later.every(function (x) { return x.state === 'in' && !scored(x); })) return { status: 'unknown', index: i };

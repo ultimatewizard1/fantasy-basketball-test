@@ -10,6 +10,9 @@ our own snapshots. Run on a schedule (.github/workflows/collect-lines.yml):
 Writes (Python standard library only):
   OUT_DIR/lines/<game date>.json        one entry per player/stat market: the first
                                         line seen and the last line before tip-off
+  OUT_DIR/matchups/<date>.json           the score each starter currently counts in our league's
+                                        matchups, per run (shows locks, and how long Sleeper
+                                        takes to apply a finished game)
   OUT_DIR/projections/<snapshot date>.json
                                         Sleeper's projection for every game not yet
                                         started this week, as of that day (for
@@ -23,6 +26,8 @@ LINES = 'https://api.sleeper.app/lines/available?dynamic=true&include_preseason=
 STATE = 'https://api.sleeper.app/v1/state/nba'
 PROJ = 'https://api.sleeper.com/projections/nba/{season}/{week}?season_type=regular&' + '&'.join(
     'position[]=' + p for p in ('PG', 'SG', 'G', 'SF', 'PF', 'F', 'C'))
+LEAGUE = os.environ.get('SLEEPER_LEAGUE_ID', '1414370391324950528')
+MATCHUPS = 'https://api.sleeper.app/v1/league/{league}/matchups/{week}'
 KEEP = ('pts', 'reb', 'ast', 'stl', 'blk', 'to', 'tpm', 'dd', 'td', 'sp')
 
 
@@ -89,6 +94,16 @@ def main(out):
             continue
         snap[f"{r['game_id']}|{r['player_id']}"] = {'d': d, 'at': stamp, 's': {k: round(s[k], 2) for k in KEEP if s.get(k) is not None}}
     save(path, snap)
+
+    # Counted scores in our league's matchups, keyed by run time.
+    try:
+        mpath = os.path.join(out, 'matchups', today + '.json')
+        msnap = load(mpath)
+        msnap[stamp] = {str(m['roster_id']): {pid: m.get('players_points', {}).get(pid) for pid in m.get('starters') or []}
+                        for m in get(MATCHUPS.format(league=LEAGUE, week=week))}
+        save(mpath, msnap)
+    except Exception as e:
+        print('matchups unavailable:', e)
 
     # Lines: keep the first and the latest pre-game version of every market.
     files, n = {}, 0
