@@ -160,3 +160,23 @@ test('market perception: slumping players look worse to their manager; needy tea
   const r = S.evaluateTrade(mine, theirs, [mine[0]], [theirs[0]], Object.assign({}, ctx, { theirVal }));
   assert.ok(r.mine > 0 && r.theirs > 0 && r.theirsModel < 0);
 });
+
+test('betting lines: payouts give the over chance, which gives the expected stat', () => {
+  assert.ok(Math.abs(S.impliedOver(1.8, 1.8) - 0.5) < 1e-12);
+  assert.ok(S.impliedOver(1.59, 2.01) > 0.55); // over is the favourite
+  // An even line sits at the mean (normal stats); a favoured over pushes it up.
+  assert.ok(Math.abs(S.lineMean('pts', 24.5, 0.5) - 24.5) < 1e-6);
+  assert.ok(S.lineMean('reb', 4.5, 0.56) > 4.5);
+  // Poisson stats: P(X >= 1) = 0.5 means lambda = ln 2.
+  assert.ok(Math.abs(S.lineMean('blk', 0.5, 0.5) - Math.LN2) < 1e-6);
+  assert.equal(S.lineMean('dd', 0.5, 0.3), 0.3);
+  const lines = S.linesByGame([
+    { sport: 'nba', subject_type: 'player', outcome_type: 'over_under', wager_type: 'points', game_id: 'g', subject_id: '7',
+      options: [{ outcome: 'over', status: 'active', outcome_value: 20.5, payout_multiplier: '1.8' }, { outcome: 'under', status: 'active', outcome_value: 20.5, payout_multiplier: '1.8' }] },
+    { sport: 'nfl', subject_type: 'player', outcome_type: 'over_under', wager_type: 'points', game_id: 'g', subject_id: '8', options: [] }
+  ]);
+  assert.deepEqual(Object.keys(lines), ['g|7']);
+  const blended = S.blendLines({ pts: 25, reb: 8 }, lines['g|7']);
+  assert.ok(Math.abs(blended.pts - (S.LINE_WEIGHT * 20.5 + (1 - S.LINE_WEIGHT) * 25)) < 1e-6);
+  assert.equal(blended.reb, 8);
+});

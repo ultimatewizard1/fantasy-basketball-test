@@ -72,6 +72,16 @@ than a 3-game week: players averaged 3.42 vs 2.57 games played.
 these react to role changes like a starter getting hurt. They set each player's level for this
 week's start/sit, lock bars and the **next-week lineup** (80% weekly projection, 20% season level).
 
+**Betting lines.** Sleeper Picks posts over/under lines (points, rebounds, assists, threes,
+steals, blocks, double-double) for upcoming games, usually the next day's, for about a dozen
+players per game. Both sides' payouts give the chance of the over, with the house margin removed.
+That gives an expected value for each stat: normal for points/rebounds/assists, Poisson for the
+rest. Those stats are blended 70% lines / 30% Sleeper's projection, then scored with your league's
+settings. Games with lines show **($)**; hover for both numbers. Lines track minutes and role better:
+on 10/28 Sleeper projected Mamukelashvili for 15.9 pts / 7.9 reb, his lines said ~11.8 / 4.8, and
+he was averaging 9.5 / 4.0. Sportsbooks (DraftKings, FanDuel), PrizePicks and Underdog block
+browser access; The Odds API needs a paid key for this volume.
+
 Players on IR don't take an active roster spot; they count like bench depth until they return.
 
 Rest-of-season value works like the draft values, with two changes:

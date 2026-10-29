@@ -678,6 +678,7 @@
     myPicks: myPicks,
     slotForPick: slotForPick,
     availability: availability,
+    normCdf: normCdf,
     mockPick: mockPick,
     normalizeStatsPayload: normalizeStatsPayload,
     playersFromPayload: playersFromPayload,

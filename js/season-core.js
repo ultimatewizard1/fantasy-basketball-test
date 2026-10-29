@@ -166,6 +166,76 @@
     return WEEK_PROJ_WEIGHT * avg + (1 - WEEK_PROJ_WEIGHT) * rosFpg;
   }
 
+  /* ---------------- betting lines (Sleeper Picks) ---------------- */
+
+  // Sleeper Picks over/under markets -> stat keys.
+  var LINE_STATS = { points: 'pts', rebounds: 'reb', assists: 'ast', threes_made: 'tpm', steals: 'stl', blocks: 'blk', turnovers: 'to', double_double: 'dd' };
+  // Game-to-game spread of points/rebounds/assists: sd ~ k * sqrt(mean). Rarer stats are Poisson.
+  var LINE_SPREAD = { pts: 1.4, reb: 1.05, ast: 1.05 };
+  // Line-implied stats vs Sleeper's projection for the same game. Lines track
+  // minutes and role changes better: on 10/28 Sleeper projected Mamukelashvili
+  // for 15.9 pts / 7.9 reb, his lines implied ~11.8 / 4.8 and he was averaging 9.5 / 4.0.
+  var LINE_WEIGHT = 0.7;
+
+  // Over probability from both sides' payouts, with the house margin removed.
+  function impliedOver(overMult, underMult) {
+    var o = 1 / overMult, u = 1 / underMult;
+    return o / (o + u);
+  }
+
+  function invNorm(p) {
+    var lo = -8, hi = 8;
+    for (var i = 0; i < 60; i++) { var mid = (lo + hi) / 2; if (C.normCdf(mid) < p) lo = mid; else hi = mid; }
+    return (lo + hi) / 2;
+  }
+
+  // P(X > line) for a Poisson count.
+  function poissonOver(lambda, line) {
+    var term = Math.exp(-lambda), cdf = term;
+    for (var i = 1; i <= Math.floor(line); i++) { term *= lambda / i; cdf += term; }
+    return 1 - cdf;
+  }
+
+  // Expected value of a stat given its line and the chance of going over.
+  function lineMean(stat, line, pOver) {
+    if (stat === 'dd') return pOver;
+    var p = Math.min(0.97, Math.max(0.03, pOver));
+    if (LINE_SPREAD[stat]) {
+      var z = invNorm(p), mu = line;
+      for (var i = 0; i < 30; i++) mu = Math.max(0, line + z * LINE_SPREAD[stat] * Math.sqrt(Math.max(mu, 0.25)));
+      return mu;
+    }
+    var lo = 0, hi = 4 * line + 10;
+    for (var j = 0; j < 60; j++) { var mid = (lo + hi) / 2; if (poissonOver(mid, line) < p) lo = mid; else hi = mid; }
+    return (lo + hi) / 2;
+  }
+
+  // { 'gameId|playerId': { pts: expected, reb: ..., ... } } from Sleeper Picks markets.
+  function linesByGame(markets) {
+    var out = {};
+    (markets || []).forEach(function (m) {
+      if (!m || m.sport !== 'nba' || m.subject_type !== 'player' || m.outcome_type !== 'over_under') return;
+      var stat = LINE_STATS[m.wager_type];
+      if (!stat) return;
+      var side = function (name) { return (m.options || []).filter(function (o) { return o.outcome === name && o.status === 'active'; })[0]; };
+      var over = side('over'), under = side('under');
+      if (!over || !under || +over.outcome_value !== +under.outcome_value) return;
+      var key = m.game_id + '|' + m.subject_id;
+      (out[key] = out[key] || {})[stat] = lineMean(stat, +over.outcome_value, impliedOver(+over.payout_multiplier, +under.payout_multiplier));
+    });
+    return out;
+  }
+
+  // Projected stat line with the stats the lines cover pulled toward them.
+  function blendLines(stats, lineStats, weight) {
+    var w = weight == null ? LINE_WEIGHT : weight;
+    var out = Object.assign({}, stats);
+    Object.keys(lineStats || {}).forEach(function (k) {
+      out[k] = stats[k] == null ? lineStats[k] : w * lineStats[k] + (1 - w) * stats[k];
+    });
+    return out;
+  }
+
   /*
    * Short-term lineup gain from adding a free agent: best drop among my
    * `candidates` (lowest rest-of-season value) by change in the value of my
@@ -466,6 +536,11 @@
     blendFpg: blendFpg,
     weekLevel: weekLevel,
     shortTermMoves: shortTermMoves,
+    impliedOver: impliedOver,
+    lineMean: lineMean,
+    linesByGame: linesByGame,
+    blendLines: blendLines,
+    LINE_WEIGHT: LINE_WEIGHT,
     rosValue: rosValue,
     teamValue: teamValue,
     evaluateTrade: evaluateTrade,

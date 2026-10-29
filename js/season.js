@@ -66,13 +66,15 @@
         out.league.draft_id ? Sleeper.draft(out.league.draft_id).catch(function () { return null; }) : null,
         Sleeper.weekProjections(out.league.season, out.week).catch(function () { return []; }),
         Sleeper.weekProjections(out.league.season, out.week + 1).catch(function () { return []; }),
-        Sleeper.matchups(cfg.leagueId, out.week).catch(function () { return []; })
+        Sleeper.matchups(cfg.leagueId, out.week).catch(function () { return []; }),
+        Sleeper.lines().catch(function () { return []; })
       ]);
     }).then(function (r) {
       out.seasonStats = r[0];
       out.draft = r[1];
       out.weekProjRaw = { this: r[2] || [], next: r[3] || [] };
       out.matchups = r[4] || [];
+      out.lines = S.linesByGame(r[5]);
       st = out;
       pickMyTeam();
       buildValues();
@@ -135,12 +137,19 @@
   /* ---------------- values ---------------- */
 
   // Sleeper weekly projections: one row per player per game -> id -> [{date, opp, fp}].
-  function parseWeekProj(rows, scoring) {
+  // Per-game projections; where betting lines exist for the game, the stats
+  // they cover are pulled toward the lines.
+  function parseWeekProj(rows, scoring, lines) {
     var out = {};
+    var fp = function (stats) { return C.fantasyPoints(C.estimateBonuses(stats), scoring); };
     (rows || []).forEach(function (r) {
       if (!r || !r.stats || !r.stats.gp || r.player_id == null) return;
       var id = String(r.player_id);
-      (out[id] = out[id] || []).push({ date: r.date, opp: r.opponent, fp: C.fantasyPoints(C.estimateBonuses(r.stats), scoring), min: (r.stats.sp || 0) / 60 });
+      var ls = lines && lines[r.game_id + '|' + id];
+      (out[id] = out[id] || []).push({
+        date: r.date, opp: r.opponent, fp: fp(ls ? S.blendLines(r.stats, ls) : r.stats), min: (r.stats.sp || 0) / 60,
+        fpSleeper: ls ? fp(r.stats) : null, fpLines: ls ? fp(S.blendLines(r.stats, ls, 1)) : null
+      });
     });
     Object.keys(out).forEach(function (id) { out[id].sort(function (a, b) { return a.date < b.date ? -1 : 1; }); });
     return out;
@@ -151,7 +160,7 @@
   function buildValues() {
     var scoring = C.cleanScoring(st.league.scoring_settings);
     st.scoring = scoring;
-    st.wp = { this: parseWeekProj(st.weekProjRaw.this, scoring), next: parseWeekProj(st.weekProjRaw.next, scoring) };
+    st.wp = { this: parseWeekProj(st.weekProjRaw.this, scoring, st.lines), next: parseWeekProj(st.weekProjRaw.next, scoring, st.lines) };
     st.roster = st.league.roster_positions || C.DEFAULT_ROSTER;
     st.weeksLeft = Math.max(1, S.FANTASY_WEEKS - st.week + 1);
     var consById = {};
@@ -497,7 +506,11 @@
     return p.week.games.map(function (x) {
       var label = dayLabel(x.game.date);
       var b2b = p.week && p.week.games.some(function (y) { return S.easternDate(new Date(y.game.date)) === S.addDays(S.easternDate(new Date(x.game.date)), -1); });
-      if (x.state === 'pre') return '<span class="pick-pill" title="Sleeper projection' + (b2b ? '; 2nd night of a back-to-back: a bit more likely to rest' : '') + '">' + label + (b2b ? ' (B2B)' : '') + (x.proj ? ' · proj ' + fmt(x.proj.fp, 0) : '') + '</span>';
+      if (x.state === 'pre') {
+        var lines = x.proj && x.proj.fpLines != null;
+        var title = lines ? 'Projection ' + fmt(x.proj.fp) + ': betting lines ' + fmt(x.proj.fpLines) + ' (70%), Sleeper ' + fmt(x.proj.fpSleeper) + ' (30%)' : 'Sleeper projection';
+        return '<span class="pick-pill" title="' + title + (b2b ? '; 2nd night of a back-to-back: a bit more likely to rest' : '') + '">' + label + (b2b ? ' (B2B)' : '') + (x.proj ? ' · proj ' + fmt(x.proj.fp, 0) + (lines ? ' ($)' : '') : '') + '</span>';
+      }
       if (x.state === 'in') return '<span class="pick-pill next">' + label + ' live</span>';
       if (x.dnp) return '<span class="pick-pill done">' + label + ' DNP</span>';
       return '<span class="pick-pill' + (p.week.pending === x ? ' next' : '') + '">' + label + ': <strong>' + fmt(x.fp) + '</strong></span>';

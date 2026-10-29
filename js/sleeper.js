@@ -9,6 +9,7 @@
 
   var V1 = 'https://api.sleeper.app/v1';
   var WEB = 'https://api.sleeper.com';
+  var LINES = 'https://api.sleeper.app/lines/available?dynamic=true&include_preseason=true';
   var POSITIONS = ['PG', 'SG', 'G', 'SF', 'PF', 'F', 'C'];
   var PLAYER_CACHE_KEY = 'fbd.players.v1';
   var PLAYER_CACHE_MS = 24 * 60 * 60 * 1000;
@@ -119,6 +120,8 @@
       var pos = POSITIONS.map(function (p) { return 'position[]=' + p; }).join('&');
       return getJson(WEB + '/projections/nba/' + season + '/' + week + '?season_type=regular&' + pos);
     },
+    // Sleeper Picks over/under lines for upcoming games (all sports; usually the next day's NBA games).
+    lines: function () { return getJson(LINES); },
     stats: function (season) { return firstWorking(seasonUrls('stats', season), nonEmpty); }
   };
 
