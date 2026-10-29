@@ -71,6 +71,8 @@ than a 3-game week: players averaged 3.42 vs 2.57 games played.
 **Weekly projections.** Sleeper publishes a projection for every game this week and next, and
 these react to role changes like a starter getting hurt. They set each player's level for this
 week's start/sit, lock bars and the **next-week lineup** (80% weekly projection, 20% season level).
+Before use, Sleeper's stats are corrected for the biases measured last season: rebounds × 0.87,
+turnovers × 0.93, steals × 0.97, the rest × 0.98–0.99 (see *Model checks*).
 
 **Betting lines.** Sleeper Picks posts over/under lines (points, rebounds, assists, threes,
 steals, blocks, double-double) for upcoming games, usually the next day's, for about a dozen
@@ -125,8 +127,10 @@ FantasyPros games projections, capped at games still available. In more detail:
 and you choose which by locking it after it's played.
 - **Weekly value:** the expected score of the game you end up locking. It comes from an
   optimal-stopping calculation over 2–4 games, using the player's projected average and his
-  game-to-game swing. Swing is the standard deviation of last season's single-game fantasy
-  points from ESPN game logs, scored with your league's settings.
+  game-to-game swing. Swing is how far single games land from their projection: 4.3 + 0.14 ×
+  average, measured on last season's games (so ±8.5 for a 30 FP/G player, ±5.7 at 10). A
+  player's own swing from last season's ESPN game logs only tilts this by 20%, because it
+  barely predicted his lock-in bonus.
 - **Weeks played:** weeks with at least one game. Known injuries count as whole lost weeks, and
   70% of other expected absences are assumed to wipe out a week.
 - **Season value** = weekly value × weeks played.
@@ -176,6 +180,31 @@ CSV from any site.
    plus the best Gain you can expect at your next pick **with him on your roster**, minus that
    same expectation if you don't take him. A player likely to make it back to you scores lower.
    So does one whose position you'd fill twice. Availability assumes ADP ± max(2.5, 22% of ADP).
+
+## Model checks
+
+`python3 scripts/backtest.py` replays last season (2025-26): about 24,000 games with Sleeper's
+per-game projection and box score. It fits on October to mid-January and tests on mid-January
+to April, so every number below is out of sample.
+
+| Check | Result |
+|---|---|
+| Sleeper's per-game projections | +0.74 FP/game too high. Rebounds run 13% high, turnovers 7%; minutes for starters ~1.4 high. |
+| After the per-stat correction | Bias −0.01; error (RMSE) 6.54 → 6.48. |
+| Best short-term level | 80% corrected projection + 20% season level (RMSE 6.45). Season average alone: 7.1. |
+| Single-game spread | 4.3 + 0.14 × projection. The old model (37% of the average) was too wide for stars and too narrow for bench players. |
+| Lock-In replay (3,797 player-weeks) | The lock/pass rule locks 18.9 points/week vs 15.0 with no locks. The old spread predicted 19.95 vs 18.87 realized, overstating stars by ~3 points a week. The new spread predicts 18.87 vs 18.94, within 0.8 at every player level. |
+| Line conversion | Single-game spread of points ≈ 1.7 × √mean, rebounds 1.1, assists 1.2. Steals, blocks, threes and turnovers are close to Poisson. |
+
+**What isn't tested yet:**
+- **The 70/30 betting-line weight.** Past prop lines aren't available for free: Sleeper removes
+  its lines at tip-off, and the archives (BigDataBall, SportsDataIO, The Odds API) are paid.
+- **How far ahead the projection was made.** The archive holds Sleeper's last saved version of
+  each projection, most saved after the game. They aren't suspiciously accurate (only ~0.1 FP
+  better than a per-minute model), so they look like final pre-game numbers. Projections pulled
+  several days ahead, as the tool does for later games in the week, are probably a bit worse.
+- **Some fixed assumptions** come from published odds rather than our data: injury-status
+  play chances (Questionable 65% etc.) and the market-value heuristic for trades.
 
 ## Tests
 

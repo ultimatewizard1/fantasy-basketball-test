@@ -317,14 +317,20 @@
   var LOCKIN_GAMES_PER_WEEK = { 2: 0.1, 3: 0.5, 4: 0.4 };
   var LOCKIN_WEEKS = 24;
   var DEFAULT_CV = 0.37;          // median game-to-game sd/mean in last season's logs
+  // Spread of a single game around its projection, from 2025-26 (~24k games
+  // vs Sleeper's per-game projections, fit Oct-Jan, checked Jan-Apr):
+  // sd ~ 4.3 + 0.14 * mean. Not proportional to the mean: stars swing
+  // ~28% of their average, low-minute players over 50%.
+  var SD_BASE = 4.3;
+  var SD_SLOPE = 0.14;
   var MISSED_GAMES_IN_LOST_WEEKS = 0.7; // share of missed games that wipe out a whole week
   var TEAM_GAMES_PER_WEEK = 3.4;
-  // Calibrated by replaying 2025-26 for 146 players: the lock-in bonus was
-  // real (+3.6/week vs +4.0 predicted) but did not grow with a player's own
-  // season-long swing among similar averages, so individual swing is mostly
-  // shrunk to the league median and the bonus scaled to match.
+  // A player's own season-long swing barely predicted his lock-in bonus in a
+  // 2025-26 replay (146 players), so it only tilts the league-wide spread.
   var SWING_SHRINK = 0.8;
-  var LOCKIN_CALIBRATION = 0.9;
+  // With the spread above, a replay of 3,797 player-weeks (Jan-Apr 2026)
+  // predicted 18.87 locked points per week vs 18.94 realized: no extra scaling.
+  var LOCKIN_CALIBRATION = 1;
 
   function normPdf(z) { return Math.exp(-z * z / 2) / Math.sqrt(2 * Math.PI); }
 
@@ -368,7 +374,8 @@
   // Game-to-game sd used for Lock-In maths (individual swing mostly shrunk).
   function effectiveSd(fpg, cv) {
     var c = cv == null ? DEFAULT_CV : cv;
-    return Math.max(((1 - SWING_SHRINK) * c + SWING_SHRINK * DEFAULT_CV) * fpg, 1);
+    var base = SD_BASE + SD_SLOPE * Math.max(0, fpg);
+    return Math.max(base * ((1 - SWING_SHRINK) * c / DEFAULT_CV + SWING_SHRINK), 1);
   }
 
   // Calibrated expected locked score per week.

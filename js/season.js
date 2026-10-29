@@ -146,9 +146,10 @@
       if (!r || !r.stats || !r.stats.gp || r.player_id == null) return;
       var id = String(r.player_id);
       var ls = lines && lines[r.game_id + '|' + id];
+      var stats = S.adjustProjection(r.stats);
       (out[id] = out[id] || []).push({
-        date: r.date, opp: r.opponent, fp: fp(ls ? S.blendLines(r.stats, ls) : r.stats), min: (r.stats.sp || 0) / 60,
-        fpSleeper: ls ? fp(r.stats) : null, fpLines: ls ? fp(S.blendLines(r.stats, ls, 1)) : null
+        date: r.date, opp: r.opponent, fp: fp(ls ? S.blendLines(stats, ls) : stats), min: (r.stats.sp || 0) / 60,
+        fpSleeper: ls ? fp(stats) : null, fpLines: ls ? fp(S.blendLines(stats, ls, 1)) : null
       });
     });
     Object.keys(out).forEach(function (id) { out[id].sort(function (a, b) { return a.date < b.date ? -1 : 1; }); });

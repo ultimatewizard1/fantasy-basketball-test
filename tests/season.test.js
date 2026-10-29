@@ -180,3 +180,13 @@ test('betting lines: payouts give the over chance, which gives the expected stat
   assert.ok(Math.abs(blended.pts - (S.LINE_WEIGHT * 20.5 + (1 - S.LINE_WEIGHT) * 25)) < 1e-6);
   assert.equal(blended.reb, 8);
 });
+
+test('calibration: projection bias correction and single-game spread', () => {
+  const adj = S.adjustProjection({ pts: 20, reb: 10, ast: 5, to: 2, gp: 1 });
+  assert.ok(Math.abs(adj.reb - 8.7) < 1e-9 && adj.gp === 1 && adj.ast < 5);
+  // Spread grows slower than the average: stars ~28%, bench players over 50%.
+  assert.ok(Math.abs(C.effectiveSd(30) - 8.5) < 1e-9);
+  assert.ok(C.effectiveSd(30) / 30 < 0.3 && C.effectiveSd(10) / 10 > 0.5);
+  // A high personal swing still tilts it a little.
+  assert.ok(C.effectiveSd(30, 0.5) > C.effectiveSd(30) && C.effectiveSd(30, 0.5) < 1.1 * C.effectiveSd(30));
+});

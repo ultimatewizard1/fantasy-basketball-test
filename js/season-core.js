@@ -166,12 +166,26 @@
     return WEEK_PROJ_WEIGHT * avg + (1 - WEEK_PROJ_WEIGHT) * rosFpg;
   }
 
+  /*
+   * Sleeper's per-game projections vs 2025-26 box scores (actual / projected,
+   * fit Oct-Jan): rebounds run 13% high and turnovers 7% high. Scaling them
+   * removed the +0.7 FP/game bias and cut the error on Jan-Apr games.
+   */
+  var PROJ_STAT_MULT = { pts: 0.99, reb: 0.87, ast: 0.99, stl: 0.97, to: 0.93, tpm: 0.98 };
+
+  function adjustProjection(stats) {
+    var out = Object.assign({}, stats);
+    Object.keys(PROJ_STAT_MULT).forEach(function (k) { if (out[k] != null) out[k] *= PROJ_STAT_MULT[k]; });
+    return out;
+  }
+
   /* ---------------- betting lines (Sleeper Picks) ---------------- */
 
   // Sleeper Picks over/under markets -> stat keys.
   var LINE_STATS = { points: 'pts', rebounds: 'reb', assists: 'ast', threes_made: 'tpm', steals: 'stl', blocks: 'blk', turnovers: 'to', double_double: 'dd' };
   // Game-to-game spread of points/rebounds/assists: sd ~ k * sqrt(mean). Rarer stats are Poisson.
-  var LINE_SPREAD = { pts: 1.4, reb: 1.05, ast: 1.05 };
+  // Fit to 2025-26 single games around Sleeper's projections: pts 1.7-1.8, reb 1.1, ast 1.15-1.3.
+  var LINE_SPREAD = { pts: 1.7, reb: 1.1, ast: 1.2 };
   // Line-implied stats vs Sleeper's projection for the same game. Lines track
   // minutes and role changes better: on 10/28 Sleeper projected Mamukelashvili
   // for 15.9 pts / 7.9 reb, his lines implied ~11.8 / 4.8 and he was averaging 9.5 / 4.0.
@@ -536,6 +550,7 @@
     blendFpg: blendFpg,
     weekLevel: weekLevel,
     shortTermMoves: shortTermMoves,
+    adjustProjection: adjustProjection,
     impliedOver: impliedOver,
     lineMean: lineMean,
     linesByGame: linesByGame,
