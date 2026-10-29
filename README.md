@@ -23,6 +23,31 @@ npm start            # python3 -m http.server 8000 → http://localhost:8000
 Go to **Settings & data** → **Load from Sleeper** (the league and draft IDs are pre-filled), then
 turn on **Live sync** when the draft starts.
 
+## Updating
+
+Double-click **`update.bat`** (Windows) or **`update.command`** (Mac) in the folder, then reload
+the page. It pulls the latest version from GitHub. Your settings (team, locks, overrides) are saved
+in the browser, so updating doesn't touch them.
+
+- **Needs Git:** [Git for Windows](https://git-scm.com/download/win), or on a Mac run
+  `xcode-select --install` in Terminal.
+- **Sign-in:** the repo is private, so the first update asks you to sign in to GitHub. On Windows a
+  browser window opens. On a Mac, use a
+  [personal access token](https://github.com/settings/tokens) as the password.
+- **Folder from a ZIP:** the first run connects it to GitHub. After that each update only pulls
+  the changes.
+- **Mac blocks the script:** if macOS says it can't open the script, right-click it → **Open**, or
+  run `sh update.command` in Terminal.
+
+Prefer the command line? Clone once, then `git pull`:
+
+```sh
+git clone -b claude/gifted-newton-30bdl7 https://github.com/ultimatewizard1/fantasy-basketball-test.git
+```
+
+[GitHub Desktop](https://desktop.github.com) also works: clone the repo, then press **Fetch
+origin → Pull**.
+
 ## In-season tools (`season.html`)
 
 Open `season.html`, or click **In-season tools** in the draft tool. It loads your league, every
