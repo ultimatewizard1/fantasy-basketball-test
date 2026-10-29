@@ -117,3 +117,30 @@ test('per-game play chances: back-to-backs lower the value of waiting', () => {
   const p = { id: 'a', mu: 30, sd: 10, left: 2, qs: [0, 1], pending: null, locked: null };
   assert.equal(S.simulatePlayer(p, {}, undefined, [{ u: 0.5, z: 2 }, { u: 0.5, z: 0 }]), 30);
 });
+
+test('IR players do not take an active spot, so a deep-bench swap still shows its value', () => {
+  // 10 starters + 3 bench + 1 IR: the 3rd bench player is the drop candidate.
+  const mine = [];
+  for (let i = 0; i < 13; i++) mine.push(player('m' + i, ['PG', 'SG', 'SF', 'PF', 'C'], 1000 - i * 50));
+  mine.push({ id: 'ir', pos: ['PG'], v: 420, onIR: true }); // injured, but worth more than the 400 bench player
+  // A 450 free agent replaces the 400 bench player: +50 of bench value at 0.3 weight.
+  const m = S.waiverMoves(mine, [player('fa', ['C'], 450)], ctx);
+  assert.equal(m[0].drop.id, 'm12');
+  assert.ok(Math.abs(m[0].gain - 0.3 * 50) < 1e-9);
+  // The IR player's value still counts toward the team (as bench depth).
+  assert.ok(S.teamValue(mine, C.DEFAULT_ROSTER, p => p.v, 0, 13) > S.teamValue(mine.slice(0, 13), C.DEFAULT_ROSTER, p => p.v, 0, 13));
+});
+
+test('market perception: slumping players look worse to their manager; needy teams', () => {
+  // Drafted as a 35 FP/G star, averaging 25 over 6 games: the market sees 30, our model (15-game prior) more.
+  assert.equal(S.perceivedFpg(35, 25, 6), 30);
+  assert.equal(S.perceivedFpg(35, 25, 0), 35);
+  assert.equal(S.teamUrgency(300, 0, 2, 2), 0);
+  assert.ok(S.teamUrgency(300, 70, 1, 3) > 0.7);
+  // A trade they'd accept by their (needy) valuation but not by ours.
+  const mine = [player('a', ['PG'], 500)];
+  const theirs = [player('x', ['PG'], 600)];
+  const theirVal = p => (p.id === 'a' ? 700 : p.v);
+  const r = S.evaluateTrade(mine, theirs, [mine[0]], [theirs[0]], Object.assign({}, ctx, { theirVal }));
+  assert.ok(r.mine > 0 && r.theirs > 0 && r.theirsModel < 0);
+});

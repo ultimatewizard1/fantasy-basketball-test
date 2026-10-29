@@ -86,8 +86,9 @@
       <div class="row gap wrap">
         <label>Trade partner <select id="partnerSelect"></select></label>
         <button id="evalBtn" class="btn primary">Evaluate selected trade</button>
-        <button id="findBtn" class="btn">Find trades that help both teams</button>
+        <button id="findBtn" class="btn">Find trades they'd likely accept</button>
       </div>
+      <div id="teamNeeds"></div>
       <div id="tradeResult"></div>
       <div class="plan-grid" id="tradeRosters"></div>
       <div id="tradeFinder"></div>
@@ -102,6 +103,8 @@
         <p><strong>Lock-In</strong>: after a game, lock it if it beats the expected value of waiting for his remaining games. The bar rises with more games left and drops if he might miss games. If his next game has started, that game can no longer be locked. His last game of the week counts automatically.</p>
         <p><strong>Waivers</strong>: rank by <em>rest of season</em> (best long-term add and drop) or by <em>this week / next 2 weeks</em> for short-term pickups. Short-term mode uses Sleeper's per-game weekly projections, which react to role changes like a starter getting hurt. It only suggests dropping one of your 4 lowest rest-of-season players and shows what that drop costs over the season.</p>
         <p><strong>Weekly projections</strong>: Sleeper publishes a projection for every game this week and next. These set each player's level for this week's values and lock bars (80% weekly projection, 20% season level). They also feed the rest-of-season value, counting like 10 games of evidence alongside the preseason projection (15 games) and this season's actual games.</p>
+        <p><strong>Market value</strong> estimates how other managers see a player. It starts from his draft-day reputation (the projection of the player drafted where he was), then pulls toward this season's numbers quickly: 6 games count as much as the reputation. Our model is slower (15 games). A slumping player looks worse to his manager than to us, so he's a <em>buy-low</em>. A hot one looks better, so he's a <em>sell-high</em>.</p>
+        <p><strong>Team needs</strong>: the share of a team's healthy starting lineup that's out injured, plus a losing record, gives an urgency from 0 to 100%. Urgent teams value production over the next ~3 weeks more, so they'll accept trades for healthy players they'd otherwise turn down.</p>
         <p><strong>Trades</strong>: both teams' lineup value before and after, using the same values. A 2-for-1 credits the open roster spot with a typical free agent. "Helps both" means our model says neither side loses value. Real managers may value players by name or ADP, so the market column helps you pitch it.</p>
       </div>
     </section>

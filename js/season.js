@@ -200,12 +200,37 @@
     });
     st.pool = pool;
     st.rostered = {};
-    st.rosters.forEach(function (r) { (r.players || []).forEach(function (id) { st.rostered[id] = r.roster_id; }); });
-    // "Market" value: the ROS value of the player ranked at this player's draft-day ADP.
-    var sorted = Object.keys(pool).map(function (k) { return pool[k].ros; }).sort(function (a, b) { return b - a; });
+    st.rosters.forEach(function (r) {
+      (r.players || []).forEach(function (id) { st.rostered[id] = r.roster_id; });
+      (r.reserve || []).forEach(function (id) { if (pool[id]) pool[id].onIR = true; });
+    });
+    // Market view: draft-day reputation (projected FP/G of the player ranked
+    // at his ADP) pulled toward this season's numbers faster than our model.
+    var byProj = Object.keys(pool).map(function (k) { return pool[k].projFpg; }).filter(function (v) { return v != null; }).sort(function (a, b) { return b - a; });
     Object.keys(pool).forEach(function (k) {
       var p = pool[k];
-      p.market = p.adp != null ? sorted[Math.min(sorted.length - 1, Math.max(0, Math.round(p.adp) - 1))] : p.ros;
+      var nameFpg = p.adp != null ? byProj[Math.min(byProj.length - 1, Math.max(0, Math.round(p.adp) - 1))] : p.projFpg;
+      var perceived = S.perceivedFpg(nameFpg, p.seasonFpg || 0, p.gp);
+      p.marketFpg = perceived == null ? p.mu : perceived;
+      p.market = S.rosValue(C.lockInWeekly(p.marketFpg, p.cv), st.weeksLeft, p.durability, p.weeksOut);
+      p.form = p.gp >= 2 && p.projFpg != null ? p.seasonFpg - p.projFpg : null;
+      // Production over the next ~3 weeks: what a team short on healthy players cares about.
+      p.near = Math.max(0, 3 - Math.min(3, p.weeksOut || 0)) * p.weekly * S.playProb(p.injury && !/out/i.test(p.injury) ? p.injury : '');
+    });
+    st.teamInfo = {};
+    st.rosters.forEach(function (r) {
+      var list = (r.players || []).map(function (id) { return pool[id]; }).filter(Boolean);
+      // Healthy lineup (ignoring injuries) vs the share of it currently out.
+      var healthy = C.assign(list, C.starterSlots(st.roster), function (p) { return C.lockInWeekly(p.mu, p.cv); });
+      var total = 0, hurt = 0, injured = [];
+      healthy.starters.forEach(function (sl) {
+        if (!sl.player) return;
+        var w = C.lockInWeekly(sl.player.mu, sl.player.cv);
+        total += w;
+        if (sl.player.weeksOut >= 1 || /out/i.test(sl.player.injury || '')) { hurt += w; injured.push(sl.player); }
+      });
+      var set = r.settings || {};
+      st.teamInfo[r.roster_id] = { urgency: S.teamUrgency(total, hurt, set.wins, set.losses), injured: injured, wins: set.wins || 0, losses: set.losses || 0 };
     });
     var fas = Object.keys(pool).filter(function (k) { return !st.rostered[k]; }).map(function (k) { return pool[k].ros; }).sort(function (a, b) { return b - a; });
     st.fill = fas[Math.min(fas.length - 1, 14)] || 0; // a typical pickup
@@ -341,6 +366,7 @@
     renderLock();
     renderWaivers();
     renderTradeRosters();
+    renderTeamNeeds();
   }
 
   /* ---------------- matchup: what it takes to win the week ---------------- */
@@ -481,7 +507,7 @@
   function renderWeek() {
     var mine = rosterPlayers(myRoster());
     var slots = C.starterSlots(st.roster);
-    var best = C.assign(mine.filter(function (p) { return p.pos.length; }), slots, function (p) { return p.week ? p.week.value : 0; });
+    var best = C.assign(mine.filter(function (p) { return p.pos.length && !p.onIR; }), slots, function (p) { return p.week ? p.week.value : 0; });
     var current = (myRoster().starters || []);
     var curSet = {};
     current.forEach(function (id) { curSet[id] = 1; });
@@ -508,7 +534,7 @@
 
   // Best lineup for next week from Sleeper's per-game projections.
   function renderNextWeek(mine, slots) {
-    var best = C.assign(mine.filter(function (p) { return p.pos.length; }), slots, function (p) { return p.week ? p.week.next : 0; });
+    var best = C.assign(mine.filter(function (p) { return p.pos.length && !p.onIR; }), slots, function (p) { return p.week ? p.week.next : 0; });
     var total = 0;
     var row = function (slot, p) {
       if (p) total += slot === 'BN' ? 0 : p.week.next;
@@ -588,14 +614,49 @@
 
   var tradePick = { give: {}, get: {} };
 
+  // How a team likely values players: market view plus, when it is short on
+  // healthy players, extra weight on the next ~3 weeks of production.
+  function theirValFor(rosterId) {
+    var u = (st.teamInfo[rosterId] || {}).urgency || 0;
+    return function (p) { return (p.market || 0) + 1.5 * u * (p.near || 0); };
+  }
+
+  function marketTag(p) {
+    if (!p.market || !p.ros) return '';
+    var r = p.ros / p.market;
+    if (r >= 1.1) return '<span class="good small" title="Our value ' + fmt(p.ros, 0) + ' vs market ' + fmt(p.market, 0) + '">buy low</span>';
+    if (r <= 0.9) return '<span class="bad small" title="Our value ' + fmt(p.ros, 0) + ' vs market ' + fmt(p.market, 0) + '">sell high</span>';
+    return '';
+  }
+
+  function formCell(p) {
+    if (p.form == null) return '<span class="muted">–</span>';
+    var cls = p.form >= 2 ? 'good' : p.form <= -2 ? 'bad' : 'muted';
+    return '<span class="' + cls + '" title="This season ' + fmt(p.seasonFpg) + ' FP/G in ' + p.gp + ' games vs ' + fmt(p.projFpg) + ' projected">' + (p.form >= 0 ? '+' : '') + fmt(p.form) + '</span>';
+  }
+
+  function renderTeamNeeds() {
+    var rows = st.rosters.filter(function (r) { return r.roster_id !== cfg.myRosterId; }).map(function (r) {
+      var ti = st.teamInfo[r.roster_id] || { urgency: 0, injured: [] };
+      return { r: r, ti: ti };
+    }).sort(function (a, b) { return b.ti.urgency - a.ti.urgency; });
+    $('teamNeeds').innerHTML = '<div class="card"><h3>Who needs a trade</h3><p class="small muted">Urgency = share of their healthy lineup currently injured, plus a losing record. Urgent teams value players who help in the next few weeks more, which makes them easier trade partners for healthy players.</p><table class="detail-table">' +
+      rows.map(function (x) {
+        var u = x.ti.urgency;
+        return '<tr><td>' + esc(ownerName(x.r)) + '</td><td class="small muted">' + x.ti.wins + '-' + x.ti.losses + '</td><td class="num ' + (u >= 0.5 ? 'bad' : u >= 0.25 ? 'warnc' : 'muted') + '">' + Math.round(u * 100) + '%</td><td class="small">' +
+          (x.ti.injured.length ? x.ti.injured.map(function (p) { return esc(p.name) + (p.weeksOut >= 1 ? ' (~' + fmt(p.weeksOut, 0) + ' wk)' : ''); }).join(', ') : '<span class="muted">healthy</span>') + '</td></tr>';
+      }).join('') + '</table></div>';
+  }
+
   function renderTradeRosters() {
     var mine = rosterPlayers(myRoster()).sort(function (a, b) { return b.ros - a.ros; });
     var partner = st.rosters.filter(function (r) { return r.roster_id === cfg.partnerRosterId; })[0];
     var theirs = partner ? rosterPlayers(partner).sort(function (a, b) { return b.ros - a.ros; }) : [];
     var table = function (list, side, title) {
-      return '<div class="card"><h3>' + esc(title) + '</h3><table class="detail-table">' + list.map(function (p) {
-        return '<tr><td><input type="checkbox" data-side="' + side + '" data-id="' + esc(p.id) + '"' + (tradePick[side][p.id] ? ' checked' : '') + '></td><td>' + nameCell(p) + '</td><td class="pos">' + esc(p.pos.join('/')) + '</td><td class="num">' + fmt(p.mu) + '</td><td class="num">' + fmt(p.ros, 0) + '</td></tr>';
-      }).join('') + '</table><p class="small muted">FP/G · rest-of-season value</p></div>';
+      return '<div class="card"><h3>' + esc(title) + '</h3><table class="detail-table"><tr class="small muted"><td></td><td>Player</td><td>Pos</td><td class="num">FP/G</td><td class="num" title="This season vs projection">Form</td><td class="num">Our value</td><td class="num" title="How other managers likely value him">Market</td><td></td></tr>' + list.map(function (p) {
+        return '<tr><td><input type="checkbox" data-side="' + side + '" data-id="' + esc(p.id) + '"' + (tradePick[side][p.id] ? ' checked' : '') + '></td><td>' + nameCell(p) + (p.onIR ? ' <span class="small muted">IR</span>' : '') + '</td><td class="pos">' + esc(p.pos.join('/')) + '</td>' +
+          '<td class="num">' + fmt(p.mu) + '</td><td class="num">' + formCell(p) + '</td><td class="num">' + fmt(p.ros, 0) + '</td><td class="num">' + fmt(p.market, 0) + '</td><td>' + marketTag(p) + '</td></tr>';
+      }).join('') + '</table></div>';
     };
     $('tradeRosters').innerHTML = table(mine, 'give', 'You give') + table(theirs, 'get', ownerName(partner || {}) + ' gives');
   }
@@ -607,20 +668,17 @@
     var give = mine.filter(function (p) { return tradePick.give[p.id]; });
     var get = theirs.filter(function (p) { return tradePick.get[p.id]; });
     if (!give.length && !get.length) { $('tradeResult').innerHTML = '<p class="muted">Tick players on both sides first.</p>'; return; }
-    var r = S.evaluateTrade(mine, theirs, give, get, waiverCtx());
-    var sum = function (l, k) { return l.reduce(function (s, p) { return s + (p[k] || 0); }, 0); };
-    var mkt = sum(get, 'market') - sum(give, 'market');
-    $('tradeResult').innerHTML = '<div class="card"><p>You: <strong class="' + (r.mine >= 0 ? 'good' : 'bad') + '">' + (r.mine >= 0 ? '+' : '') + fmt(r.mine, 0) + '</strong> rest-of-season points · ' +
-      esc(ownerName(partner)) + ': <strong class="' + (r.theirs >= 0 ? 'good' : 'bad') + '">' + (r.theirs >= 0 ? '+' : '') + fmt(r.theirs, 0) + '</strong>' +
-      ' · Draft-day market value: you ' + (mkt >= 0 ? 'receive' : 'give') + ' ' + fmt(Math.abs(mkt), 0) + ' more' +
-      (r.dropsNeeded ? ' · you would need to drop ' + r.dropsNeeded + ' player' + (r.dropsNeeded > 1 ? 's' : '') : '') + '.</p>' +
-      '<p class="small muted">' + verdictText(r, mkt) + '</p></div>';
+    var r = S.evaluateTrade(mine, theirs, give, get, Object.assign({}, waiverCtx(), { theirVal: theirValFor(partner.roster_id) }));
+    var sign = function (v) { return '<strong class="' + (v >= 0 ? 'good' : 'bad') + '">' + (v >= 0 ? '+' : '') + fmt(v, 0) + '</strong>'; };
+    $('tradeResult').innerHTML = '<div class="card"><p>You (our numbers): ' + sign(r.mine) + ' · ' + esc(ownerName(partner)) + ', as they likely see it: ' + sign(r.theirs) +
+      ' · them by our numbers: ' + sign(r.theirsModel) + (r.dropsNeeded ? ' · you would need to drop ' + r.dropsNeeded + ' player' + (r.dropsNeeded > 1 ? 's' : '') : '') + '.</p>' +
+      '<p class="small muted">' + verdictText(r) + '</p></div>';
   }
 
-  function verdictText(r, mkt) {
-    if (r.mine > 0 && r.theirs >= 0) return 'Helps both teams by our numbers: a good pitch.';
-    if (r.mine > 0 && mkt <= 0) return 'Helps you, and on draft-day value they get more, which makes it easier to sell.';
-    if (r.mine > 0) return 'Helps you. They lose value by our numbers, so expect pushback.';
+  function verdictText(r) {
+    if (r.mine > 0 && r.theirs >= 0 && r.theirsModel < 0) return 'Good for you, and they\'ll likely see it as fair or better (market view and their needs), even though our numbers say they lose value. This is the kind of deal to pitch.';
+    if (r.mine > 0 && r.theirs >= 0) return 'Helps you, and they should like it too. Easy pitch.';
+    if (r.mine > 0) return 'Helps you, but they\'ll likely see it as a loss. Expect pushback, or add a sweetener.';
     return 'Doesn\'t help you by our numbers.';
   }
 
@@ -629,13 +687,26 @@
     setTimeout(function () {
       var mine = rosterPlayers(myRoster());
       var teams = st.rosters.filter(function (r) { return r.roster_id !== cfg.myRosterId; })
-        .map(function (r) { return { name: ownerName(r), players: rosterPlayers(r) }; });
+        .map(function (r) { return { name: ownerName(r), players: rosterPlayers(r), val: theirValFor(r.roster_id), urgency: (st.teamInfo[r.roster_id] || {}).urgency || 0 }; });
       var res = S.findTrades(mine, teams, waiverCtx(), { tolerance: 0, limit: 25 });
-      $('tradeFinder').innerHTML = '<h2>Trades that help you without hurting them (by our numbers)</h2>' + (res.length ? '<div class="table-wrap"><table class="board"><thead><tr><th>Team</th><th>You give</th><th>You get</th><th class="num">You</th><th class="num">Them</th></tr></thead><tbody>' +
+      var list = function (ps) { return ps.map(function (p) { return esc(p.name) + ' ' + marketTag(p); }).join(' + '); };
+      var mineSorted = mine.slice().sort(function (a, b) { return (b.market - b.ros) - (a.market - a.ros); });
+      var sellHigh = mineSorted.filter(function (p) { return p.market > p.ros * 1.1; }).slice(0, 5);
+      var buyLow = Object.keys(st.pool).map(function (k) { return st.pool[k]; })
+        .filter(function (p) { return st.rostered[p.id] && st.rostered[p.id] !== cfg.myRosterId && p.ros > p.market * 1.1 && p.ros > st.fill * 1.3; })
+        .sort(function (a, b) { return (b.ros - b.market) - (a.ros - a.market); }).slice(0, 8);
+      var owner = function (p) { return ownerName(st.rosters.filter(function (r) { return r.roster_id === st.rostered[p.id]; })[0]); };
+      $('tradeFinder').innerHTML = '<h2>Trades they\'d likely accept that help you</h2><p class="small muted">"Them (likely view)" uses market values and their needs; "Them (our numbers)" is our model. The best deals help you and look fine to them, even when our numbers say they lose.</p>' +
+        (res.length ? '<div class="table-wrap"><table class="board"><thead><tr><th>Team</th><th>You give</th><th>You get</th><th class="num">You</th><th class="num">Them (likely view)</th><th class="num">Them (our numbers)</th></tr></thead><tbody>' +
         res.map(function (t) {
-          return '<tr><td>' + esc(t.team.name) + '</td><td>' + t.give.map(function (p) { return esc(p.name); }).join(' + ') + '</td><td>' + t.get.map(function (p) { return esc(p.name); }).join(' + ') + '</td>' +
-            '<td class="num good">+' + fmt(t.mine, 0) + '</td><td class="num">' + (t.theirs >= 0 ? '+' : '') + fmt(t.theirs, 0) + '</td></tr>';
-        }).join('') + '</tbody></table></div>' : '<p class="muted">No win-win trades found right now.</p>');
+          return '<tr><td>' + esc(t.team.name) + (t.team.urgency >= 0.25 ? ' <span class="warnc small">needs help</span>' : '') + '</td><td>' + list(t.give) + '</td><td>' + list(t.get) + '</td>' +
+            '<td class="num good">+' + fmt(t.mine, 0) + '</td><td class="num">' + (t.theirs >= 0 ? '+' : '') + fmt(t.theirs, 0) + '</td><td class="num ' + (t.theirsModel < 0 ? 'muted' : '') + '">' + (t.theirsModel >= 0 ? '+' : '') + fmt(t.theirsModel, 0) + '</td></tr>';
+        }).join('') + '</tbody></table></div>' : '<p class="muted">No deals found that help you and that they\'d likely accept.</p>') +
+        '<div class="plan-grid"><div class="card"><h3>Buy-low targets</h3><p class="small muted">Our value is well above what their manager likely thinks.</p><table class="detail-table">' +
+        buyLow.map(function (p) { return '<tr><td>' + nameCell(p) + '</td><td class="small muted">' + esc(owner(p)) + '</td><td class="num">' + formCell(p) + '</td><td class="num">' + fmt(p.ros, 0) + ' vs ' + fmt(p.market, 0) + '</td></tr>'; }).join('') +
+        '</table></div><div class="card"><h3>Sell-high on your roster</h3><p class="small muted">The market likely values him above our numbers.</p><table class="detail-table">' +
+        (sellHigh.length ? sellHigh.map(function (p) { return '<tr><td>' + nameCell(p) + '</td><td class="num">' + formCell(p) + '</td><td class="num">' + fmt(p.ros, 0) + ' vs ' + fmt(p.market, 0) + '</td></tr>'; }).join('') : '<tr><td class="muted">Nobody right now.</td></tr>') +
+        '</table></div></div>';
     }, 30);
   }
 

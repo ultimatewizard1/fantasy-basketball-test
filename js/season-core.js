@@ -174,7 +174,7 @@
   function shortTermMoves(mine, freeAgents, candidates, roster, horizonVal, rosVal, ctx) {
     var slots = C.starterSlots(roster);
     var lineup = function (list) {
-      var res = C.assign(list, slots, horizonVal), t = 0;
+      var res = C.assign(list.filter(function (p) { return !p.onIR; }), slots, horizonVal), t = 0;
       res.starters.forEach(function (s) { if (s.player) t += horizonVal(s.player); });
       return t;
     };
@@ -210,7 +210,9 @@
    * a typical free agent) so 2-for-1 trades credit the open spot.
    */
   function teamValue(players, roster, val, fill, rosterSize) {
-    var list = players.slice();
+    // Players on IR (p.onIR) don't use an active spot; they count like bench depth.
+    var ir = players.filter(function (p) { return p.onIR; });
+    var list = players.filter(function (p) { return !p.onIR; });
     var size = rosterSize || roster.length;
     for (var i = list.length; i < size; i++) list.push({ id: '_fa' + i, pos: ['PG', 'SG', 'SF', 'PF', 'C'], _fill: true });
     var v = function (p) { return p._fill ? (fill || 0) : val(p); };
@@ -219,8 +221,11 @@
     res.starters.forEach(function (s) { if (s.player) total += v(s.player); });
     res.bench.sort(function (a, b) { return v(b) - v(a); })
       .slice(0, C.benchCount(roster)).forEach(function (p) { total += BENCH_WEIGHT * v(p); });
+    ir.forEach(function (p) { total += BENCH_WEIGHT * val(p); });
     return total;
   }
+
+  function activeCount(list) { return list.filter(function (p) { return !p.onIR; }).length; }
 
   function without(list, remove) {
     var ids = {};
@@ -229,13 +234,26 @@
   }
 
   // Change in team value for both sides of a trade.
+  /*
+   * Change in team value for both sides of a trade. ctx.val is our model;
+   * ctx.theirVal (optional) is how the other manager likely values players
+   * (market perception plus their short-term needs). `theirs` uses theirVal
+   * when given, `theirsModel` always uses our model.
+   */
   function evaluateTrade(mine, theirs, give, get, ctx) {
     var size = ctx.rosterSize;
-    var myBefore = teamValue(mine, ctx.roster, ctx.val, ctx.fill, size);
-    var theirBefore = teamValue(theirs, ctx.roster, ctx.val, ctx.fill, size);
-    var myAfter = teamValue(without(mine, give).concat(get), ctx.roster, ctx.val, ctx.fill, Math.max(size, mine.length - give.length + get.length));
-    var theirAfter = teamValue(without(theirs, get).concat(give), ctx.roster, ctx.val, ctx.fill, Math.max(size, theirs.length - get.length + give.length));
-    return { mine: myAfter - myBefore, theirs: theirAfter - theirBefore, dropsNeeded: Math.max(0, mine.length - give.length + get.length - size) };
+    var myAfterList = without(mine, give).concat(get), theirAfterList = without(theirs, get).concat(give);
+    var delta = function (before, after, val) {
+      return teamValue(after, ctx.roster, val, ctx.fill, Math.max(size, activeCount(after))) -
+        teamValue(before, ctx.roster, val, ctx.fill, Math.max(size, activeCount(before)));
+    };
+    var theirsModel = delta(theirs, theirAfterList, ctx.val);
+    return {
+      mine: delta(mine, myAfterList, ctx.val),
+      theirs: ctx.theirVal ? delta(theirs, theirAfterList, ctx.theirVal) : theirsModel,
+      theirsModel: theirsModel,
+      dropsNeeded: Math.max(0, activeCount(myAfterList) - size)
+    };
   }
 
   /*
@@ -259,8 +277,8 @@
       shapes.forEach(function (sh) {
         sh[0].forEach(function (give) {
           sh[1].forEach(function (get) {
-            var r = evaluateTrade(mine, t.players, give, get, ctx);
-            if (r.mine > 0 && r.theirs >= -tolerance) out.push({ team: t, give: give, get: get, mine: r.mine, theirs: r.theirs });
+            var r = evaluateTrade(mine, t.players, give, get, t.val ? Object.assign({}, ctx, { theirVal: t.val }) : ctx);
+            if (r.mine > 0 && r.theirs >= -tolerance) out.push({ team: t, give: give, get: get, mine: r.mine, theirs: r.theirs, theirsModel: r.theirsModel });
           });
         });
       });
@@ -271,7 +289,7 @@
 
   // Best add/drop for each free agent: team value gain from swapping him in.
   function waiverMoves(mine, freeAgents, ctx) {
-    var size = Math.max(ctx.rosterSize, mine.length);
+    var size = Math.max(ctx.rosterSize, activeCount(mine));
     var base = teamValue(mine, ctx.roster, ctx.val, ctx.fill, size);
     return freeAgents.map(function (fa) {
       var best = null;
@@ -282,6 +300,32 @@
       });
       return { add: fa, drop: best && best.drop, gain: best ? best.gain : 0 };
     }).sort(function (a, b) { return b.gain - a.gain; });
+  }
+
+  /* ---------------- how other managers see players ---------------- */
+
+  // Managers react to this season's numbers faster than our model does: their
+  // draft-day view of a player counts like this many games.
+  var MARKET_NAME_GAMES = 6;
+
+  /*
+   * Perceived FP/G: draft-day reputation (the projected FP/G of the player
+   * ranked at his ADP) pulled toward this season's actual FP/G.
+   */
+  function perceivedFpg(nameFpg, seasonFpg, gp) {
+    gp = num(gp);
+    if (nameFpg == null) return gp > 0 ? seasonFpg : null;
+    if (!gp) return nameFpg;
+    return (nameFpg * MARKET_NAME_GAMES + seasonFpg * gp) / (MARKET_NAME_GAMES + gp);
+  }
+
+  /*
+   * How urgently a team needs healthy production now (0..1): share of its
+   * starters' weekly value currently out injured, plus a losing record.
+   */
+  function teamUrgency(starterWeekly, injuredWeekly, wins, losses) {
+    var share = starterWeekly > 0 ? injuredWeekly / starterWeekly : 0;
+    return Math.max(0, Math.min(1, share * 2.5 + (num(losses) - num(wins)) * 0.08));
   }
 
   /* ---------------- matchup simulation ---------------- */
@@ -388,6 +432,8 @@
 
   return {
     ESPN_TO_SLEEPER: ESPN_TO_SLEEPER,
+    perceivedFpg: perceivedFpg,
+    teamUrgency: teamUrgency,
     lockBar: lockBar,
     simulatePlayer: simulatePlayer,
     simulateMatchup: simulateMatchup,

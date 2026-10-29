@@ -35,7 +35,7 @@ your team in the top right; it defaults to your draft slot.
 | **This week** | The best lineup for the rest of the week. Each player's expected locked score uses his remaining games, his injury status (Out 0%, Doubtful 25%, Questionable 65%, Day-to-day 80% chance to play) and any finished game you can still lock. It flags who to start and who to sit compared with your current Sleeper lineup. |
 | **Lock-In** | For every starter: this week's games with fantasy points from ESPN box scores, and **LOCK** or **PASS** on his latest game. The bar is the expected value of waiting for his remaining games, and drops if he might miss them. Includes a quick calculator for any score. |
 | **Waivers** | Free agents ranked by **rest of season**, **this week** or **this week + next week**, with the best player to drop. Short-term modes use Sleeper's per-game weekly projections, only suggest dropping one of your 4 lowest rest-of-season players, and show the season cost of that drop. |
-| **Trades** | Tick players on both sides to see the value change for you and for them, plus draft-day "market" value to help you pitch it. **Find trades** searches every 1-for-1, 2-for-1 and 1-for-2 with all teams for deals that help you without hurting them by our numbers. |
+| **Trades** | Tick players on both sides to see the change for you (our numbers) and for them, **as they likely see it**. Their view uses **market value** (draft-day reputation pulled quickly toward this season's numbers, so slumping players look worse to their managers) and their **needs**: teams with injured starters or losing records value the next ~3 weeks more. **Find trades** searches every 1-for-1, 2-for-1 and 1-for-2 with all teams for deals that help you and that they'd likely accept. It also lists buy-low targets, sell-high candidates and a "who needs a trade" table. |
 
 **Back-to-backs.** Last season players weren't worse on the 2nd night of a back-to-back
 (+1.6% vs their average), but they **sat more often**: stars 19.5% vs 13.9%, others 23.3% vs
@@ -46,6 +46,8 @@ than a 3-game week: players averaged 3.42 vs 2.57 games played.
 **Weekly projections.** Sleeper publishes a projection for every game this week and next, and
 these react to role changes like a starter getting hurt. They set each player's level for this
 week's start/sit, lock bars and the **next-week lineup** (80% weekly projection, 20% season level).
+
+Players on IR don't take an active roster spot; they count like bench depth until they return.
 
 Rest-of-season value works like the draft values, with two changes:
 - **Per-game projection:** the preseason consensus counts as 15 games and the current weekly
