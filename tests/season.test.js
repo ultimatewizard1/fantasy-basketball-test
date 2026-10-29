@@ -190,3 +190,33 @@ test('calibration: projection bias correction and single-game spread', () => {
   // A high personal swing still tilts it a little.
   assert.ok(C.effectiveSd(30, 0.5) > C.effectiveSd(30) && C.effectiveSd(30, 0.5) < 1.1 * C.effectiveSd(30));
 });
+
+test('locks read from Sleeper: earlier game counted after a later one was played', () => {
+  const g = (state, fp, extra) => Object.assign({ state, fps: [fp, fp] }, extra);
+  // Giannis: 40.5 Monday, 36 Wednesday, Sleeper counts 40.5 -> Monday is locked.
+  assert.deepEqual(S.detectLock([g('post', 40.5), g('post', 36)], 40.5), { status: 'locked', score: 40.5, index: 0 });
+  // Counts his latest game: locked or not, Sleeper can't show it yet.
+  assert.equal(S.detectLock([g('post', 24), g('post', 29)], 29).status, 'unknown');
+  // Live points: not locked.
+  assert.equal(S.detectLock([g('post', 20), g('in', 14.5)], 14.5).status, 'open');
+  // A DNP since doesn't reveal anything; nor does a game that just tipped with no stats.
+  assert.equal(S.detectLock([g('post', 20), g('post', null, { dnp: true })], 20).status, 'unknown');
+  assert.equal(S.detectLock([g('post', 20), { state: 'in', fps: [null, null] }], 20).status, 'unknown');
+  // Matches only Sleeper's own score (e.g. a technical foul ESPN's box score lacks).
+  assert.equal(S.detectLock([{ state: 'post', fps: [27, 25] }, g('post', 31)], 25).status, 'locked');
+  // Pickups: latest completed add per player.
+  const pk = S.pickupTimes([{ status: 'complete', adds: { 9: 2 }, status_updated: 100 }, { status: 'complete', adds: { 9: 3 }, status_updated: 200 }, { status: 'failed', adds: { 9: 4 }, status_updated: 300 }]);
+  assert.deepEqual(pk['9'], { roster: 3, at: 200 });
+});
+
+test('matchup plan: when locking and passing win equally often, ahead locks and behind passes', () => {
+  const p = { id: 'a', mu: 30, sd: 10, q: 1, left: 2, pending: 34, locked: null };
+  const fixed = { id: 'b', locked: 200, left: 0 };
+  // Ahead by a mile: both choices win every time -> lock.
+  const ahead = S.matchupPlan([p, fixed], [{ id: 'x', locked: 50, left: 0 }], { n: 2000 });
+  assert.equal(ahead.decisions[0].tie, true);
+  assert.equal(ahead.decisions[0].call, 'lock');
+  // Hopeless: both lose every time -> pass.
+  const behind = S.matchupPlan([p, fixed], [{ id: 'x', locked: 900, left: 0 }], { n: 2000 });
+  assert.equal(behind.decisions[0].call, 'pass');
+});

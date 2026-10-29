@@ -56,7 +56,7 @@ your team in the top right; it defaults to your draft slot.
 
 | Tab | What it does |
 |---|---|
-| **Matchup** | What it takes to win this week. It simulates the rest of the week thousands of times for both lineups: remaining games, injury odds, each manager locking or passing. You get your **win chance** and the **lock or pass** call for every game you can lock now, with win chance for each option. It tests whether you should play it safe (ahead) or chase upside (behind) and adjusts your bars for upcoming games. Mark locks and mid-week pickups for both teams, since Sleeper doesn't publish them, and choose how your opponent plays: locks smartly, locks anything above average, or never locks. |
+| **Matchup** | What it takes to win this week. It simulates the rest of the week thousands of times for both lineups: remaining games, injury odds, each manager locking or passing. You get your **win chance** and the **lock or pass** call for every game you can lock now, with win chance for each option. It tests whether you should play it safe (ahead) or chase upside (behind) and adjusts your bars for upcoming games. When locking and passing win about equally often (within 0.1 points), it says **lock** if you're ahead (a banked score can't collapse) and **pass** if you're behind. Choose how your opponent plays: locks smartly, locks anything above average, or never locks. |
 | **This week** | The best lineup for the rest of the week. Each player's expected locked score uses his remaining games, his injury status (Out 0%, Doubtful 25%, Questionable 65%, Day-to-day 80% chance to play) and any finished game you can still lock. It flags who to start and who to sit compared with your current Sleeper lineup. |
 | **Lock-In** | For every starter: this week's games with fantasy points from ESPN box scores, and **LOCK** or **PASS** on his latest game. The bar is the expected value of waiting for his remaining games, and drops if he might miss them. Includes a quick calculator for any score. |
 | **Waivers** | Free agents ranked by **rest of season**, **this week** or **this week + next week**, with the best player to drop. Short-term modes use Sleeper's per-game weekly projections, only suggest dropping one of your 4 lowest rest-of-season players, and show the season cost of that drop. Each week gets its own best lineup. A negative gain means he wouldn't crack your lineup, and shows how far short he falls. |
@@ -83,6 +83,13 @@ settings. Games with lines show **($)**; hover for both numbers. Lines track min
 on 10/28 Sleeper projected Mamukelashvili for 15.9 pts / 7.9 reb, his lines said ~11.8 / 4.8, and
 he was averaging 9.5 / 4.0. Sportsbooks (DraftKings, FanDuel), PrizePicks and Underdog block
 browser access; The Odds API needs a paid key for this volume.
+
+**Locks and pickups from Sleeper.** Sleeper doesn't publish locks directly, but each matchup lists
+the score every player currently counts. If that equals an *earlier* game even though he has played
+since, that game is locked. Both teams' locks are read this way, matched against ESPN box scores and
+Sleeper's own box scores (which include technical fouls). One limit: a lock on a player's *latest*
+game looks the same as not locking until his next game starts. Mark those by hand if you know them.
+Mid-week pickups come from the league's transactions; games that tipped before the pickup don't count.
 
 Players on IR don't take an active roster spot; they count like bench depth until they return.
 

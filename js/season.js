@@ -67,7 +67,9 @@
         Sleeper.weekProjections(out.league.season, out.week).catch(function () { return []; }),
         Sleeper.weekProjections(out.league.season, out.week + 1).catch(function () { return []; }),
         Sleeper.matchups(cfg.leagueId, out.week).catch(function () { return []; }),
-        Sleeper.lines().catch(function () { return []; })
+        Sleeper.lines().catch(function () { return []; }),
+        Sleeper.weekStats(out.league.season, out.week).catch(function () { return []; }),
+        Sleeper.transactions(cfg.leagueId, out.week).catch(function () { return []; })
       ]);
     }).then(function (r) {
       out.seasonStats = r[0];
@@ -75,6 +77,8 @@
       out.weekProjRaw = { this: r[2] || [], next: r[3] || [] };
       out.matchups = r[4] || [];
       out.lines = S.linesByGame(r[5]);
+      out.weekStatsRaw = r[6] || [];
+      out.pickups = S.pickupTimes(r[7]);
       st = out;
       pickMyTeam();
       buildValues();
@@ -162,6 +166,18 @@
     var scoring = C.cleanScoring(st.league.scoring_settings);
     st.scoring = scoring;
     st.wp = { this: parseWeekProj(st.weekProjRaw.this, scoring, st.lines), next: parseWeekProj(st.weekProjRaw.next, scoring, st.lines) };
+    // Sleeper's own box scores this week (playerId -> date -> FP; null = did not play), and the
+    // score each player currently counts in his matchup: together they reveal locks.
+    st.sleeperGames = {};
+    st.weekStatsRaw.forEach(function (r) {
+      if (!r || r.player_id == null || !r.date) return;
+      var s = r.stats || {};
+      (st.sleeperGames[String(r.player_id)] = st.sleeperGames[String(r.player_id)] || {})[r.date] = s.sp ? S.statLineFp(s, scoring) : null;
+    });
+    st.shown = {};
+    (st.matchups || []).forEach(function (m) { Object.keys(m.players_points || {}).forEach(function (id) { st.shown[id] = m.players_points[id]; }); });
+    st.rosterOf = {};
+    st.rosters.forEach(function (r) { (r.players || []).forEach(function (id) { st.rosterOf[id] = r.roster_id; }); });
     st.roster = st.league.roster_positions || C.DEFAULT_ROSTER;
     st.weeksLeft = Math.max(1, S.FANTASY_WEEKS - st.week + 1);
     var consById = {};
@@ -308,15 +324,23 @@
   function computeWeek() {
     var mineIds = {};
     lockableIds().forEach(function (id) { mineIds[id] = 1; });
+    st.autoLock = {};
     Object.keys(st.pool).forEach(function (id) {
       var p = st.pool[id];
       var key = p.team + '|' + C.normalizeName(p.name);
+      var pickup = autoPickup(id);
       var list = st.games.filter(function (g) { return g.teams.indexOf(p.team) >= 0; }).map(function (g) {
         var box = mineIds[id] ? st.box[g.id] : null;
         var row = box ? box[key] : null;
         var day = S.easternDate(new Date(g.date));
         var proj = (p.projThis || []).filter(function (x) { return x.date === day; })[0] || null;
-        return { game: g, state: g.state, fp: row ? row.fp : null, line: row ? row.line : null, dnp: g.state === 'post' && box && !row, proj: proj };
+        var sl = (st.sleeperGames[id] || {})[day];
+        return {
+          game: g, state: g.state, fp: row ? row.fp : (sl != null ? sl : null), fpSleeper: sl, line: row ? row.line : null,
+          dnp: g.state === 'post' && ((box && !row) || sl === null), proj: proj,
+          // Added mid-week: games that tipped before he joined don't count.
+          beforePickup: !!(pickup && Date.parse(g.date) < pickup.at)
+        };
       });
       var left = list.filter(function (x) { return x.state === 'pre'; }).length;
       var live = list.some(function (x) { return x.state === 'in'; });
@@ -324,6 +348,7 @@
       var pending = null;
       if (mineIds[id]) {
         for (var i = list.length - 1; i >= 0; i--) {
+          if (list[i].beforePickup) break;
           if (list[i].state === 'post' && list[i].fp != null) {
             var laterStarted = list.slice(i + 1).some(function (x) { return x.state !== 'pre'; });
             if (!laterStarted) pending = list[i];
@@ -332,9 +357,16 @@
           if (list[i].state !== 'pre') break;
         }
       }
-      // Added mid-week: games before he joined your lineup can't be locked.
+      if (mineIds[id]) {
+        st.autoLock[id] = S.detectLock(list.filter(function (x) { return !x.beforePickup; }).map(function (x) {
+          return { state: x.state, dnp: x.dnp, fps: [x.fp, x.fpSleeper] };
+        }), st.shown[id]);
+      }
+      // Added mid-week (marked by hand): games before he joined your lineup can't be locked.
       var ls = st.league ? lockState(id) : { type: 'auto' };
       if (pending && ls.type === 'pickup' && ls.since && S.easternDate(new Date(pending.game.date)) < ls.since) pending = null;
+      var lockedScore = null;
+      if (ls.type === 'locked') { lockedScore = ls.score != null ? ls.score : pending ? pending.fp : 0; pending = null; }
       var q = S.playProb(p.injury);
       var upcoming = list.filter(function (x) { return x.state !== 'post' && x.proj; }).map(function (x) { return x.proj.fp; });
       var mu = S.weekLevel(upcoming.length ? upcoming : (p.projThis || []).map(function (x) { return x.fp; }), p.mu);
@@ -352,7 +384,8 @@
       else next = 0; // projected this week but not next: expected out
       p.week = {
         games: list, left: left + (live ? 1 : 0), pending: pending, q: q, qs: qs, live: live, mu: mu, sd: sd,
-        value: S.weekValue(mu, sd, pending ? pending.fp : null, left + (live ? 1 : 0), qs),
+        value: lockedScore != null ? lockedScore : S.weekValue(mu, sd, pending ? pending.fp : null, left + (live ? 1 : 0), qs),
+        locked: lockedScore, lockAuto: !!ls.auto,
         muNext: muNext, next: next, nextGames: (p.projNext || []).length
       };
     });
@@ -381,9 +414,21 @@
 
   /* ---------------- matchup: what it takes to win the week ---------------- */
 
+  // Your manual setting if any, else what Sleeper's data shows (a lock or a mid-week pickup).
   function lockState(id) {
     var wk = (cfg.locks = cfg.locks || {})[st.league.season + '-' + st.week] || {};
-    return wk[id] || { type: 'auto' };
+    if (wk[id]) return wk[id];
+    var det = st.autoLock && st.autoLock[id];
+    if (det && det.status === 'locked') return { type: 'locked', score: det.score, auto: true };
+    if (autoPickup(id)) return { type: 'pickup', auto: true };
+    return { type: 'auto' };
+  }
+
+  // A player added to his current roster after this week started.
+  function autoPickup(id) {
+    var pk = st.pickups && st.pickups[id];
+    if (!pk || !st.rosterOf || pk.roster !== st.rosterOf[id]) return null;
+    return pk.at > Date.parse(st.dates[0] + 'T04:00:00Z') ? pk : null;
   }
 
   function setLockState(id, state) {
@@ -440,29 +485,49 @@
     }, 20);
   }
 
-  function pct(x) { return Math.round(x * 100) + '%'; }
+  // Near-certain chances keep a decimal: 99.6% and 100% are different calls.
+  function pct(x) {
+    if (x >= 1) return '100%';
+    if (x <= 0) return '0%';
+    if (x > 0.99 || x < 0.01) return (Math.floor(x * 1000) / 10).toFixed(1) + '%';
+    return Math.round(x * 100) + '%';
+  }
 
-  function modeText(shift) {
+  function modeText(shift, win) {
+    if (win >= 0.97) return '<strong class="good">You\'re a heavy favorite: protect the lead.</strong> Lock good games instead of hoping for better ones; the only way to lose is a collapse. Bars are set ' + fmt(shift, 2) + ' × swing ' + (shift < 0 ? 'below' : 'from') + ' normal.';
+    if (win <= 0.03) return '<strong class="warnc">Long shot: you need big games.</strong> Pass on anything that doesn\'t help you catch up.';
     if (shift <= -0.25) return '<strong class="good">You\'re favored: play it safe.</strong> Lock good games sooner (bars ' + fmt(shift, 2) + ' × swing below normal).';
     if (shift >= 0.25) return '<strong class="warnc">You\'re behind: chase upside.</strong> Hold out for big games (bars +' + fmt(shift, 2) + ' × swing above normal).';
     return '<strong>Close matchup:</strong> use the standard bars.';
   }
 
+  function callText(d, diff) {
+    if (d.clinch) return '<strong class="good">LOCK</strong>: locks up the win in every simulation';
+    if (d.tie) return d.call === 'lock'
+      ? '<strong class="good">LOCK</strong> <span class="muted">(same win chance; banking it is safer)</span>'
+      : '<strong class="warnc">PASS</strong> <span class="muted">(same win chance; keep the upside)</span>';
+    return d.call === 'lock' ? '<strong class="good">LOCK</strong> (+' + fmt(100 * diff, 1) + ' pts of win%)' : '<strong class="warnc">PASS</strong> (+' + fmt(100 * diff, 1) + ' pts of win%)';
+  }
+
   function statusControl(sp) {
     var ls = lockState(sp.id);
+    var det = (st.autoLock || {})[sp.id] || {};
+    var autoLabel = det.status === 'locked' ? 'Sleeper: locked ' + fmt(det.score) : autoPickup(sp.id) ? 'Sleeper: added mid-week' :
+      det.status === 'open' ? 'Sleeper: not locked' : det.status === 'unknown' && det.index != null ? 'Sleeper: latest game counts (lock not visible yet)' : 'Sleeper: nothing locked';
     return '<select data-lockstate="' + esc(sp.id) + '">' +
-      '<option value="auto"' + (ls.type === 'auto' ? ' selected' : '') + '>Not locked</option>' +
-      '<option value="locked"' + (ls.type === 'locked' ? ' selected' : '') + '>Locked</option>' +
-      '<option value="pickup"' + (ls.type === 'pickup' ? ' selected' : '') + '>Added mid-week</option></select>' +
-      (ls.type === 'locked' ? ' <input data-lockscore="' + esc(sp.id) + '" type="number" step="0.5" style="width:70px" value="' + esc(ls.score != null ? ls.score : (sp.pending != null ? sp.pending : sp.shown || 0)) + '">' : '') +
-      (ls.type === 'pickup' ? '<div class="small muted">in lineup since <input data-locksince="' + esc(sp.id) + '" type="date" value="' + esc(ls.since || st.today) + '" style="width:auto;padding:2px 4px"> (earlier games don\'t count)</div>' : '');
+      '<option value="auto"' + (ls.auto || ls.type === 'auto' ? ' selected' : '') + '>' + esc(autoLabel) + '</option>' +
+      '<option value="open"' + (ls.type === 'open' ? ' selected' : '') + '>Not locked</option>' +
+      '<option value="locked"' + (ls.type === 'locked' && !ls.auto ? ' selected' : '') + '>Locked</option>' +
+      '<option value="pickup"' + (ls.type === 'pickup' && !ls.auto ? ' selected' : '') + '>Added mid-week</option></select>' +
+      (ls.type === 'locked' && !ls.auto ? ' <input data-lockscore="' + esc(sp.id) + '" type="number" step="0.5" style="width:70px" value="' + esc(ls.score != null ? ls.score : (sp.pending != null ? sp.pending : sp.shown || 0)) + '">' : '') +
+      (ls.type === 'pickup' && !ls.auto ? '<div class="small muted">in lineup since <input data-locksince="' + esc(sp.id) + '" type="date" value="' + esc(ls.since || st.today) + '" style="width:auto;padding:2px 4px"> (earlier games don\'t count)</div>' : '');
   }
 
   function lineupTable(list, expectFn) {
     return '<table class="detail-table">' + list.map(function (sp) {
       var p = sp.p;
       var games = p && p.week ? gameChips(p) : '';
-      var cur = sp.locked != null ? '<strong class="good">' + fmt(sp.locked) + ' locked</strong>' : sp.pending != null ? fmt(sp.pending) + ' lockable' : (sp.shown ? fmt(sp.shown) + ' (Sleeper)' : '–');
+      var cur = sp.locked != null ? '<strong class="good">' + fmt(sp.locked) + ' locked</strong>' + (lockState(sp.id).auto ? ' <span class="muted">(Sleeper)</span>' : '') : sp.pending != null ? fmt(sp.pending) + ' lockable' : (sp.shown ? fmt(sp.shown) + ' (Sleeper)' : '–');
       return '<tr><td>' + (p ? nameCell(p) : esc(sp.name)) + '<div class="small">' + games + '</div></td><td class="num small">' + cur + '<br><span class="muted">exp ' + fmt(expectFn(sp)) + '</span></td><td>' + statusControl(sp) + '</td></tr>';
     }).join('') + '</table>';
   }
@@ -473,7 +538,7 @@
     var head = '<div class="card"><div class="row gap wrap" style="justify-content:space-between;align-items:center">' +
       '<div><h2 style="margin:0">You vs ' + esc(oppName) + '</h2><div class="small muted">Week ' + st.week + ' · expected final: you ' + fmt(best.result.mine, 0) + ', them ' + fmt(best.result.theirs, 0) + '</div></div>' +
       '<div style="text-align:right"><div style="font-size:30px;font-weight:700">' + pct(best.result.win) + '</div><div class="small muted">win chance with the plan below</div></div></div>' +
-      '<p>' + modeText(best.shift) + '</p>' +
+      '<p>' + modeText(best.shift, best.result.win) + '</p>' +
       '<p class="small muted">If they… lock smartly: ' + pct(alt[0].win) + ' · never lock: ' + pct(alt[1].win) + ' · lock anything above average: ' + pct(alt[2].win) +
       '. Bar settings tested: ' + plan.shifts.map(function (x) { return (x.shift > 0 ? '+' : '') + x.shift + ' → ' + pct(x.result.win); }).join(', ') + '.</p></div>';
     var dec = plan.decisions.length ? '<h3>Decide now: games you can lock</h3><div class="table-wrap"><table class="board"><thead><tr><th>Player</th><th class="num">Game</th><th class="num">Bar (this matchup)</th><th class="num">Win if LOCK</th><th class="num">Win if PASS</th><th>Call</th></tr></thead><tbody>' +
@@ -481,14 +546,14 @@
         var diff = Math.abs(d.lockWin - d.passWin);
         return '<tr><td>' + nameCell(d.player.p || { id: d.player.id, name: d.player.name, team: '', pos: [] }) + '</td><td class="num">' + fmt(d.player.pending) + '</td><td class="num">' + fmt(d.bar) + '</td>' +
           '<td class="num">' + pct(d.lockWin) + '</td><td class="num">' + pct(d.passWin) + '</td>' +
-          '<td>' + (diff < 0.005 ? '<span class="muted">Coin flip: either is fine</span>' : d.call === 'lock' ? '<strong class="good">LOCK</strong> (+' + fmt(100 * diff, 1) + ' pts of win%)' : '<strong class="warnc">PASS</strong> (+' + fmt(100 * diff, 1) + ' pts of win%)') + '</td></tr>';
+          '<td>' + callText(d, diff) + '</td></tr>';
       }).join('') + '</tbody></table></div>' : '<p class="muted">No games to decide on right now (nothing finished and still lockable).</p>';
     var bars = plan.bars.filter(function (b) { return b.bar != null; });
     var barsHtml = bars.length ? '<h3>Bars for upcoming games</h3><p class="small muted">Lock his next game if it reaches the bar. Adjusted for this matchup; the standard bar is shown for comparison. His last game of the week counts automatically.</p><div class="table-wrap"><table class="board"><thead><tr><th>Player</th><th class="num">Games left</th><th class="num">Next-game bar</th><th class="num">Standard</th></tr></thead><tbody>' +
       bars.map(function (b) {
         return '<tr><td>' + nameCell(b.player.p || { id: b.player.id, name: b.player.name, team: '', pos: [] }) + '</td><td class="num">' + b.player.left + '</td><td class="num"><strong>' + fmt(b.bar) + '</strong></td><td class="num muted">' + fmt(b.standardBar) + '</td></tr>';
       }).join('') + '</tbody></table></div>' : '';
-    var lineups = '<h3>Lineups</h3><p class="small muted">Sleeper doesn\'t publish locks. Mark what you and your opponent have locked, and any player added mid-week (his earlier games can\'t count), to make this exact. "exp" is his expected locked score.</p><div class="plan-grid">' +
+    var lineups = '<h3>Lineups</h3><p class="small muted">Locks and mid-week pickups are read from Sleeper: a player is locked when the score he counts is an earlier game even though he has played since. A lock on his <em>latest</em> game only becomes visible once his next game starts, so mark those yourself if you know. "exp" is his expected locked score.</p><div class="plan-grid">' +
       '<div class="card"><h3>You</h3>' + lineupTable(mine, expMine) + '</div><div class="card"><h3>' + esc(oppName) + '</h3>' + lineupTable(theirs, expTheirs) + '</div></div>';
     return head + dec + barsHtml + lineups;
   }
@@ -566,7 +631,8 @@
     var cards = starters.map(function (p) {
       var w = p.week;
       var verdict, cls = '';
-      if (w.pending && w.left === 0) { verdict = 'Last game of his week: <strong>' + fmt(w.pending.fp) + '</strong> counts automatically.'; cls = 'muted'; }
+      if (w.locked != null) { verdict = '<strong class="good">Locked</strong> at <strong>' + fmt(w.locked) + '</strong>' + (w.lockAuto ? ' (from Sleeper)' : '') + '.'; cls = 'muted'; }
+      else if (w.pending && w.left === 0) { verdict = 'Last game of his week: <strong>' + fmt(w.pending.fp) + '</strong> counts automatically.'; cls = 'muted'; }
       else if (w.pending) {
         var d = S.lockDecision(p.week.mu, p.week.sd, w.pending.fp, w.left, w.qs);
         verdict = (d.lock ? '<strong class="good">LOCK</strong>' : '<strong class="warnc">PASS</strong>') + ': scored <strong>' + fmt(w.pending.fp) + '</strong>, the bar with ' + w.left + ' game' + (w.left === 1 ? '' : 's') + ' left is <strong>' + fmt(d.threshold) + '</strong>' +
@@ -582,7 +648,7 @@
       return '<div class="card"><div class="row gap wrap" style="justify-content:space-between"><div>' + nameCell(p) + ' <span class="pos">' + esc(p.pos.join('/')) + '</span></div><div class="small muted">this week ' + fmt(p.week.mu) + ' FP/G' + (Math.abs(p.week.mu - p.mu) >= 1 ? ' (season ' + fmt(p.mu) + ')' : '') + ' · swing ±' + fmt(p.week.sd) + '</div></div>' +
         '<div style="margin:6px 0">' + gameChips(p) + '</div><div class="' + cls + '">' + verdict + '</div></div>';
     }).join('');
-    $('lockView').innerHTML = '<p class="muted small">Starters only (bench players can\'t be locked). The bar is the expected value of waiting for his remaining games. Lock if the game you just saw beats it. Sleeper doesn\'t publish what you\'ve already locked, so ignore players you\'ve locked this week.</p><div class="plan-grid">' + cards + '</div>';
+    $('lockView').innerHTML = '<p class="muted small">Starters only (bench players can\'t be locked). The bar is the expected value of waiting for his remaining games. Lock if the game you just saw beats it. These bars maximise points; the <strong>Matchup</strong> tab adjusts them to your matchup (when you\'re far ahead it locks sooner). Locks are read from Sleeper once a player\'s next game has started.</p><div class="plan-grid">' + cards + '</div>';
     $('calcPlayer').innerHTML = rosterPlayers(r).map(function (p) { return '<option value="' + esc(p.id) + '">' + esc(p.name) + '</option>'; }).join('');
   }
 

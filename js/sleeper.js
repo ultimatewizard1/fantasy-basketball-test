@@ -120,6 +120,12 @@
       var pos = POSITIONS.map(function (p) { return 'position[]=' + p; }).join('&');
       return getJson(WEB + '/projections/nba/' + season + '/' + week + '?season_type=regular&' + pos);
     },
+    // Box scores for the week, one row per player per game (date, stats).
+    weekStats: function (season, week) {
+      var pos = POSITIONS.map(function (p) { return 'position[]=' + p; }).join('&');
+      return getJson(WEB + '/stats/nba/' + season + '/' + week + '?season_type=regular&' + pos);
+    },
+    transactions: function (leagueId, week) { return getJson(V1 + '/league/' + leagueId + '/transactions/' + week); },
     // Sleeper Picks over/under lines for upcoming games (all sports; usually the next day's NBA games).
     lines: function () { return getJson(LINES); },
     stats: function (season) { return firstWorking(seasonUrls('stats', season), nonEmpty); }

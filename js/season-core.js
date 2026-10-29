@@ -81,6 +81,61 @@
     return { fp: C.fantasyPoints(line, scoring), line: line, minutes: get('minutes') };
   }
 
+  // Fantasy points for one game from a Sleeper stat line (adds double-doubles and 40/50-point bonuses).
+  function statLineFp(s, scoring) {
+    var line = Object.assign({}, s);
+    var tens = ['pts', 'reb', 'ast', 'stl', 'blk'].filter(function (k) { return num(s[k]) >= 10; }).length;
+    line.dd = tens >= 2 ? 1 : 0;
+    line.td = tens >= 3 ? 1 : 0;
+    line.bonus_pt_40p = num(s.pts) >= 40 ? 1 : 0;
+    line.bonus_pt_50p = num(s.pts) >= 50 ? 1 : 0;
+    return C.fantasyPoints(line, scoring);
+  }
+
+  /* ---------------- locks and pickups from Sleeper ---------------- */
+
+  /*
+   * Lock status from the score Sleeper counts for a player this week (its
+   * matchup players_points). games: his games in date order, each
+   * { state: 'pre'|'in'|'post', dnp, fps: [the game's score from each source] }.
+   * - Counted score equals an earlier game while a later game has been played
+   *   with a different score: that earlier game is locked.
+   * - Counted score is live points: not locked.
+   * - Equal to his latest game with nothing played since: can't tell yet
+   *   (Sleeper only shows the difference once his next game starts).
+   */
+  function detectLock(games, shown) {
+    if (shown == null) return { status: 'unknown' };
+    var near = function (g) { return (g.fps || []).some(function (f) { return f != null && Math.abs(f - shown) < 0.06; }); };
+    var scored = function (g) { return (g.fps || []).some(function (f) { return f != null && f !== 0; }); };
+    for (var i = games.length - 1; i >= 0; i--) {
+      var g = games[i];
+      if (g.state !== 'post' || g.dnp || !near(g)) continue;
+      // Later games he actually played (a DNP doesn't change what counts).
+      var later = games.slice(i + 1).filter(function (x) { return x.state !== 'pre' && !x.dnp; });
+      if (!later.length) return { status: 'unknown', index: i };
+      if (later.some(near)) return { status: 'unknown', index: i };
+      // A game that just tipped with no stats yet can't tell us anything.
+      if (later.every(function (x) { return x.state === 'in' && !scored(x); })) return { status: 'unknown', index: i };
+      return { status: 'locked', score: shown, index: i };
+    }
+    if (games.some(function (g) { return g.state === 'in'; })) return { status: 'open' };
+    return { status: 'unknown' };
+  }
+
+  // When each player joined his current roster this week: { playerId: { roster, at (ms) } }.
+  function pickupTimes(transactions) {
+    var out = {};
+    (transactions || []).forEach(function (t) {
+      if (!t || t.status !== 'complete' || !t.adds) return;
+      var at = t.status_updated || t.created;
+      Object.keys(t.adds).forEach(function (pid) {
+        if (!out[pid] || out[pid].at < at) out[pid] = { roster: t.adds[pid], at: at };
+      });
+    });
+    return out;
+  }
+
   /* ---------------- Lock-In decisions ---------------- */
 
   /*
@@ -502,27 +557,43 @@
    * What to do to win the week: how aggressive your lock bars should be,
    * and lock-vs-pass win chances for every game you can lock right now.
    */
+  /*
+   * Win chances within this margin count as a tie. Ties go to the lower-risk
+   * choice for the side you're on: ahead -> lock (a banked score can't fall
+   * apart; the simulation can't see every way a game goes wrong), behind ->
+   * pass (keep the upside).
+   */
+  // About 20 of 20,000 simulations (the count used when one side is a big favorite):
+  // anything smaller is noise.
+  var TIE_MARGIN = 0.001;
+
   function matchupPlan(mine, theirs, opts) {
     opts = opts || {};
     var base = { n: opts.n || 5000, seed: opts.seed || 1, oppPolicy: opts.oppPolicy || {} };
     var sim = function (extra) { return simulateMatchup(mine, theirs, Object.assign({}, base, extra)); };
     var shifts = PLAN_SHIFTS.map(function (sh) { return { shift: sh, result: sim({ myPolicy: { shift: sh } }) }; });
+    var ahead = shifts.filter(function (x) { return x.shift === 0; })[0].result.win >= 0.5;
     var best = shifts.reduce(function (a, b) {
-      if (b.result.win > a.result.win + 0.002) return b;
-      if (Math.abs(b.result.win - a.result.win) <= 0.002 && Math.abs(b.shift) < Math.abs(a.shift)) return b;
+      if (b.result.win > a.result.win + TIE_MARGIN) return b;
+      // Tie: ahead -> safer bars (lock sooner), behind -> bolder bars.
+      if (Math.abs(b.result.win - a.result.win) <= TIE_MARGIN && (ahead ? b.shift < a.shift : b.shift > a.shift)) return b;
       return a;
     });
     var policy = { shift: best.shift };
+    // Near-certain outcomes: more simulations, so 99.6% vs 100% is real and not noise.
+    if (best.result.win > 0.9 || best.result.win < 0.1) base.n = Math.max(base.n, 20000);
     var decisions = mine.filter(function (p) { return p.pending != null && p.locked == null && p.left > 0; }).map(function (p) {
       var d = {}, e = {};
       d[p.id] = 'lock'; e[p.id] = 'pass';
       var lock = sim({ myPolicy: policy, decisions: d }), pass = sim({ myPolicy: policy, decisions: e });
-      return { player: p, lockWin: lock.win, passWin: pass.win, bar: lockBar(p, p.left, best.shift), call: lock.win > pass.win ? 'lock' : 'pass' };
+      var tie = Math.abs(lock.win - pass.win) <= TIE_MARGIN;
+      var call = tie ? (ahead ? 'lock' : 'pass') : lock.win > pass.win ? 'lock' : 'pass';
+      return { player: p, lockWin: lock.win, passWin: pass.win, bar: lockBar(p, p.left, best.shift), call: call, tie: tie, clinch: lock.win >= 1 && pass.win < 1 };
     });
     var bars = mine.filter(function (p) { return p.locked == null && p.left > 0; }).map(function (p) {
       return { player: p, after: p.left - 1, bar: p.left > 1 ? lockBar(p, p.left - 1, best.shift) : null, standardBar: p.left > 1 ? lockBar(p, p.left - 1, 0) : null };
     });
-    return { shifts: shifts, best: best, smart: shifts.filter(function (x) { return x.shift === 0; })[0], decisions: decisions, bars: bars };
+    return { shifts: shifts, best: best, ahead: ahead, smart: shifts.filter(function (x) { return x.shift === 0; })[0], decisions: decisions, bars: bars };
   }
 
   return {
@@ -544,6 +615,10 @@
     addDays: addDays,
     weekDates: weekDates,
     boxScoreFp: boxScoreFp,
+    statLineFp: statLineFp,
+    detectLock: detectLock,
+    pickupTimes: pickupTimes,
+    TIE_MARGIN: TIE_MARGIN,
     waitValue: waitValue,
     lockDecision: lockDecision,
     weekValue: weekValue,
