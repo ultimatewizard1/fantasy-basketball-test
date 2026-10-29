@@ -42,7 +42,7 @@ in the browser, so updating doesn't touch them.
 Prefer the command line? Clone once, then `git pull`:
 
 ```sh
-git clone -b claude/gifted-newton-30bdl7 https://github.com/ultimatewizard1/fantasy-basketball-test.git
+git clone https://github.com/ultimatewizard1/fantasy-basketball-test.git
 ```
 
 [GitHub Desktop](https://desktop.github.com) also works: clone the repo, then press **Fetch
@@ -205,6 +205,26 @@ to April, so every number below is out of sample.
   several days ahead, as the tool does for later games in the week, are probably a bit worse.
 - **Some fixed assumptions** come from published odds rather than our data: injury-status
   play chances (Questionable 65% etc.) and the market-value heuristic for trades.
+
+## Collecting betting lines
+
+Sleeper deletes each prop line when its game tips off, and its projection archive keeps only the
+final version. So a GitHub Actions job (`.github/workflows/collect-lines.yml`) saves both on a
+schedule:
+- **When:** every 2 hours from 9 am to 11 pm ET.
+- **What:** `scripts/collect_lines.py` downloads Sleeper's NBA prop lines and this week's per-game
+  projections.
+- **Where:** the **`data-snapshots`** branch, never `main`, so your copy of the tool and its
+  updates stay clean.
+  - `lines/<game date>.json`: the first line seen and the last one before tip-off, for each
+    player and stat.
+  - `projections/<date>.json`: Sleeper's projection that day for every game not yet played.
+
+After a few weeks, these show how betting lines, early projections and final projections compare
+with actual results. That will set the line weight (now 70%) and how much to trust projections
+made days ahead.
+- **Cost:** about 240 of the 2,000 free Actions minutes a month for a private repo.
+- **To stop it:** GitHub → **Actions** → *Collect Sleeper lines* → **⋯** → **Disable workflow**.
 
 ## Tests
 

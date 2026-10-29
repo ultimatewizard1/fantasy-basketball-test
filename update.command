@@ -3,7 +3,7 @@
 # from GitHub. The repo is private, so the first run asks you to sign in to GitHub.
 cd "$(dirname "$0")" || exit 1
 REPO=https://github.com/ultimatewizard1/fantasy-basketball-test.git
-BRANCH=claude/gifted-newton-30bdl7
+BRANCH=main
 
 finish() { echo; printf 'Press Enter to close. '; read -r _; exit "$1"; }
 failed() {
@@ -24,6 +24,17 @@ if [ ! -d .git ]; then
   git init -q && git remote add origin "$REPO" || failed
   git fetch origin "$BRANCH" || failed
   # Replaces the ZIP's files with the latest version. Your settings live in the browser, not here.
+  git checkout -q -f -B "$BRANCH" "origin/$BRANCH" || failed
+  git branch -q --set-upstream-to="origin/$BRANCH" || failed
+elif [ "$(git rev-parse --abbrev-ref HEAD)" != "$BRANCH" ]; then
+  # Copies set up from an older branch move to main.
+  echo "Switching this folder to the $BRANCH branch..."
+  git fetch origin "$BRANCH" || failed
+  if ! git diff --quiet HEAD; then
+    printf 'Files in this folder were changed locally. Discard them and take the latest version? [y/N] '
+    read -r answer
+    case "$answer" in [yY]*) ;; *) finish 1 ;; esac
+  fi
   git checkout -q -f -B "$BRANCH" "origin/$BRANCH" || failed
   git branch -q --set-upstream-to="origin/$BRANCH" || failed
 elif ! git pull --ff-only; then

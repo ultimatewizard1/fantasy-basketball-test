@@ -5,7 +5,7 @@ rem so the first run opens a GitHub sign-in window.
 setlocal EnableDelayedExpansion
 cd /d "%~dp0"
 set "REPO=https://github.com/ultimatewizard1/fantasy-basketball-test.git"
-set "BRANCH=claude/gifted-newton-30bdl7"
+set "BRANCH=main"
 
 where git >nul 2>nul
 if errorlevel 1 (
@@ -26,6 +26,10 @@ if not exist ".git" (
   goto updated
 )
 
+rem Copies set up from an older branch move to main.
+for /f "delims=" %%b in ('git rev-parse --abbrev-ref HEAD') do set "CUR=%%b"
+if /i not "!CUR!"=="%BRANCH%" goto switch
+
 git pull --ff-only
 if errorlevel 1 (
   echo.
@@ -35,6 +39,19 @@ if errorlevel 1 (
   git fetch origin || goto failed
   git reset -q --hard "@{u}" || goto failed
 )
+
+goto updated
+
+:switch
+echo Switching this folder to the %BRANCH% branch...
+git fetch origin "%BRANCH%" || goto failed
+git diff --quiet HEAD
+if errorlevel 1 (
+  set /p ANSWER="Files in this folder were changed locally. Discard them and take the latest version? [y/N] "
+  if /i not "!ANSWER!"=="y" goto done
+)
+git checkout -q -f -B "%BRANCH%" "origin/%BRANCH%" || goto failed
+git branch -q --set-upstream-to="origin/%BRANCH%" || goto failed
 
 :updated
 echo.
