@@ -230,6 +230,14 @@
       (r.players || []).forEach(function (id) { st.rostered[id] = r.roster_id; });
       (r.reserve || []).forEach(function (id) { if (pool[id]) pool[id].onIR = true; });
     });
+    // IR eligibility follows the player (his injury status and the league's IR rules), not
+    // the roster he's on now, so it carries correctly through trades.
+    var set = st.league.settings || {};
+    Object.keys(pool).forEach(function (k) {
+      var inj = String(pool[k].injury || '').toLowerCase();
+      pool[k].irEligible = pool[k].onIR || (set.reserve_allow_out && /out|^ir$/.test(inj)) || (set.reserve_allow_sus && /susp/.test(inj)) ||
+        (set.reserve_allow_doubtful && /doubt/.test(inj)) || (set.reserve_allow_dtd && /day|dtd|question/.test(inj)) || false;
+    });
     // Market view: draft-day reputation (projected FP/G of the player ranked
     // at his ADP) pulled toward this season's numbers faster than our model.
     var byProj = Object.keys(pool).map(function (k) { return pool[k].projFpg; }).filter(function (v) { return v != null; }).sort(function (a, b) { return b - a; });
@@ -653,7 +661,9 @@
   }
 
   function waiverCtx() {
-    return { roster: st.roster, rosterSize: st.roster.filter(function (s) { return s !== 'IR'; }).length, val: function (p) { return p.ros || 0; }, fill: st.fill };
+    var irSlots = (st.league.settings || {}).reserve_slots;
+    if (irSlots == null) irSlots = st.roster.filter(function (s) { return s === 'IR'; }).length;
+    return { roster: st.roster, rosterSize: st.roster.filter(function (s) { return s !== 'IR'; }).length, irSlots: irSlots, val: function (p) { return p.ros || 0; }, fill: st.fill };
   }
 
   function renderWaivers() {
@@ -753,7 +763,8 @@
     var r = S.evaluateTrade(mine, theirs, give, get, Object.assign({}, waiverCtx(), { theirVal: theirValFor(partner.roster_id) }));
     var sign = function (v) { return '<strong class="' + (v >= 0 ? 'good' : 'bad') + '">' + (v >= 0 ? '+' : '') + fmt(v, 0) + '</strong>'; };
     $('tradeResult').innerHTML = '<div class="card"><p>You (our numbers): ' + sign(r.mine) + ' · ' + esc(ownerName(partner)) + ', as they likely see it: ' + sign(r.theirs) +
-      ' · them by our numbers: ' + sign(r.theirsModel) + (r.dropsNeeded ? ' · you would need to drop ' + r.dropsNeeded + ' player' + (r.dropsNeeded > 1 ? 's' : '') : '') + '.</p>' +
+      ' · them by our numbers: ' + sign(r.theirsModel) + '.</p>' +
+      (r.dropsNeeded ? '<p>You\'d need to drop <strong>' + r.drops.map(function (p) { return esc(p.name) + ' (' + fmt(p.ros, 0) + ')'; }).join(', ') + '</strong>: your lowest-valued player' + (r.dropsNeeded > 1 ? 's' : '') + ' after the trade. That cost is already in your number. Injured players only free a spot on IR if they\'re out ' + S.IR_STASH_WEEKS + '+ weeks.</p>' : '') +
       '<p class="small muted">' + verdictText(r) + '</p></div>';
   }
 
@@ -781,7 +792,7 @@
       $('tradeFinder').innerHTML = '<h2>Trades they\'d likely accept that help you</h2><p class="small muted">"Them (likely view)" uses market values and their needs; "Them (our numbers)" is our model. The best deals help you and look fine to them, even when our numbers say they lose.</p>' +
         (res.length ? '<div class="table-wrap"><table class="board"><thead><tr><th>Team</th><th>You give</th><th>You get</th><th class="num">You</th><th class="num">Them (likely view)</th><th class="num">Them (our numbers)</th></tr></thead><tbody>' +
         res.map(function (t) {
-          return '<tr><td>' + esc(t.team.name) + (t.team.urgency >= 0.25 ? ' <span class="warnc small">needs help</span>' : '') + '</td><td>' + list(t.give) + '</td><td>' + list(t.get) + '</td>' +
+          return '<tr><td>' + esc(t.team.name) + (t.team.urgency >= 0.25 ? ' <span class="warnc small">needs help</span>' : '') + '</td><td>' + list(t.give) + '</td><td>' + list(t.get) + (t.drops && t.drops.length ? '<div class="small muted">you drop ' + t.drops.map(function (p) { return esc(p.name); }).join(', ') + '</div>' : '') + '</td>' +
             '<td class="num good">+' + fmt(t.mine, 0) + '</td><td class="num">' + (t.theirs >= 0 ? '+' : '') + fmt(t.theirs, 0) + '</td><td class="num ' + (t.theirsModel < 0 ? 'muted' : '') + '">' + (t.theirsModel >= 0 ? '+' : '') + fmt(t.theirsModel, 0) + '</td></tr>';
         }).join('') + '</tbody></table></div>' : '<p class="muted">No deals found that help you and that they\'d likely accept.</p>') +
         '<div class="plan-grid"><div class="card"><h3>Buy-low targets</h3><p class="small muted">Our value is well above what their manager likely thinks.</p><table class="detail-table">' +

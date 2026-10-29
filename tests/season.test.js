@@ -134,17 +134,37 @@ test('per-game play chances: back-to-backs lower the value of waiting', () => {
   assert.equal(S.simulatePlayer(p, {}, undefined, [{ u: 0.5, z: 2 }, { u: 0.5, z: 0 }]), 30);
 });
 
-test('IR players do not take an active spot, so a deep-bench swap still shows its value', () => {
-  // 10 starters + 3 bench + 1 IR: the 3rd bench player is the drop candidate.
+test('IR: a long absence frees a spot, a short one does not (he needs it back soon)', () => {
+  const irCtx = Object.assign({}, ctx, { irSlots: 3 });
+  // 10 starters + 3 bench + 1 long-term IR stash: the 3rd bench player is the drop candidate.
   const mine = [];
   for (let i = 0; i < 13; i++) mine.push(player('m' + i, ['PG', 'SG', 'SF', 'PF', 'C'], 1000 - i * 50));
-  mine.push({ id: 'ir', pos: ['PG'], v: 420, onIR: true }); // injured, but worth more than the 400 bench player
+  mine.push({ id: 'ir', pos: ['PG'], v: 420, irEligible: true, weeksOut: 6 });
   // A 450 free agent replaces the 400 bench player: +50 of bench value at 0.3 weight.
-  const m = S.waiverMoves(mine, [player('fa', ['C'], 450)], ctx);
+  const m = S.waiverMoves(mine, [player('fa', ['C'], 450)], irCtx);
   assert.equal(m[0].drop.id, 'm12');
   assert.ok(Math.abs(m[0].gain - 0.3 * 50) < 1e-9);
-  // The IR player's value still counts toward the team (as bench depth).
-  assert.ok(S.teamValue(mine, C.DEFAULT_ROSTER, p => p.v, 0, 13) > S.teamValue(mine.slice(0, 13), C.DEFAULT_ROSTER, p => p.v, 0, 13));
+  // The stash still counts toward the team (as bench depth).
+  assert.ok(S.teamValue(mine, C.DEFAULT_ROSTER, p => p.v, 0, 13, 3) > S.teamValue(mine.slice(0, 13), C.DEFAULT_ROSTER, p => p.v, 0, 13, 3));
+  // Back in a week and a half: he needs an active spot, so he isn't stashed.
+  assert.equal(S.splitIR([{ id: 's', irEligible: true, weeksOut: 1.6 }], 3).ir.length, 0);
+  // No free IR slot: not stashed either.
+  assert.equal(S.splitIR([{ id: 'a', irEligible: true, weeksOut: 8 }, { id: 'b', irEligible: true, weeksOut: 5 }], 1).ir[0].id, 'a');
+});
+
+test('2-for-1 you receive: the extra player costs a roster spot, and the drop is named', () => {
+  // Full 13-man roster. Give a 562 starter, get a 526 starter plus a 370 player out 1.6 weeks
+  // (IR-eligible, but back too soon to stash): the 370 is the drop, so it's really 526 for 562.
+  const irCtx = Object.assign({}, ctx, { irSlots: 3 });
+  const mine = [];
+  for (let i = 0; i < 12; i++) mine.push(player('m' + i, ['PG', 'SG', 'SF', 'PF', 'C'], 700 - i * 20));
+  mine.push(player('randle', ['PF', 'C'], 562));
+  const lil = player('lil', ['PG', 'SG'], 526), suggs = { id: 'suggs', pos: ['PG'], v: 370, irEligible: true, weeksOut: 1.6 };
+  const theirs = [lil, suggs];
+  const r = S.evaluateTrade(mine, theirs, [mine[12]], [lil, suggs], irCtx);
+  assert.equal(r.dropsNeeded, 1);
+  assert.equal(r.drops[0].id, 'suggs');
+  assert.ok(r.mine < 0);
 });
 
 test('market perception: slumping players look worse to their manager; needy teams', () => {

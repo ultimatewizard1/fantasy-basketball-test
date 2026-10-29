@@ -91,7 +91,11 @@ Sleeper's own box scores (which include technical fouls). One limit: a lock on a
 game looks the same as not locking until his next game starts. Mark those by hand if you know them.
 Mid-week pickups come from the league's transactions; games that tipped before the pickup don't count.
 
-Players on IR don't take an active roster spot; they count like bench depth until they return.
+**Roster spots and IR.** When a trade leaves you over the roster limit, your lowest-valued players
+are dropped. Their loss is part of the trade value, and the result names who you'd drop. So
+getting two players for one only pays if the second beats the worst player you'd cut. An injured
+player only frees a spot on IR if he's IR-eligible under your league's rules (Out or Suspended,
+3 IR slots) **and** out 3+ weeks. Someone back sooner needs his spot again almost right away.
 
 Rest-of-season value works like the draft values, with two changes:
 - **Per-game projection:** the preseason consensus counts as 15 games and the current weekly

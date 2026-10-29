@@ -327,7 +327,8 @@
       }, 0);
     };
     var base = lineup(mine);
-    var rosBase = teamValue(mine, roster, rosVal, ctx.fill, ctx.rosterSize);
+    var rosSize = Math.max(ctx.rosterSize, activeCount(mine, ctx.irSlots));
+    var rosBase = teamValue(mine, roster, rosVal, ctx.fill, rosSize, ctx.irSlots);
     return freeAgents.map(function (fa) {
       var best = null;
       candidates.forEach(function (d) {
@@ -337,7 +338,7 @@
         if (!starts) g = Math.min(0, lineup(after, fa) - base);
         if (!best || g > best.gain) best = { drop: d, gain: g, starts: starts, after: after };
       });
-      var rosChange = best ? teamValue(best.after, roster, rosVal, ctx.fill, ctx.rosterSize) - rosBase : 0;
+      var rosChange = best ? teamValue(best.after, roster, rosVal, ctx.fill, rosSize, ctx.irSlots) - rosBase : 0;
       return { add: fa, drop: best && best.drop, gain: best ? best.gain : 0, starts: !!(best && best.starts), rosChange: rosChange };
     }).sort(function (a, b) { return (b.gain - a.gain) || (total(b.add) - total(a.add)); });
   }
@@ -359,10 +360,27 @@
    * at BENCH_WEIGHT. Missing roster spots are filled with `fill` (the value of
    * a typical free agent) so 2-for-1 trades credit the open spot.
    */
-  function teamValue(players, roster, val, fill, rosterSize) {
-    // Players on IR (p.onIR) don't use an active spot; they count like bench depth.
-    var ir = players.filter(function (p) { return p.onIR; });
-    var list = players.filter(function (p) { return !p.onIR; });
+  /*
+   * IR only frees a roster spot while the player is out. Someone back within a
+   * few weeks needs his spot again almost right away (you'd drop someone when
+   * he returns), so only longer absences count as stashed.
+   */
+  var IR_STASH_WEEKS = 3;
+
+  // Players stashed on IR (up to irSlots, longest absences first); the rest need active spots.
+  // p.irEligible: his injury status qualifies for IR under the league's rules.
+  function splitIR(players, irSlots) {
+    var stash = players.filter(function (p) { return p.irEligible && (p.weeksOut || 0) >= IR_STASH_WEEKS; })
+      .sort(function (a, b) { return (b.weeksOut || 0) - (a.weeksOut || 0); }).slice(0, irSlots || 0);
+    var ids = {};
+    stash.forEach(function (p) { ids[p.id] = 1; });
+    return { ir: stash, active: players.filter(function (p) { return !ids[p.id]; }) };
+  }
+
+  function teamValue(players, roster, val, fill, rosterSize, irSlots) {
+    // IR stashes don't use an active spot; they count like bench depth.
+    var split = splitIR(players, irSlots);
+    var ir = split.ir, list = split.active.slice();
     var size = rosterSize || roster.length;
     for (var i = list.length; i < size; i++) list.push({ id: '_fa' + i, pos: ['PG', 'SG', 'SF', 'PF', 'C'], _fill: true });
     var v = function (p) { return p._fill ? (fill || 0) : val(p); };
@@ -375,7 +393,13 @@
     return total;
   }
 
-  function activeCount(list) { return list.filter(function (p) { return !p.onIR; }).length; }
+  function activeCount(list, irSlots) { return splitIR(list, irSlots).active.length; }
+
+  // Who you'd cut to get back to the roster limit: your lowest-valued active players.
+  function dropsFor(list, size, val, irSlots) {
+    var active = splitIR(list, irSlots).active;
+    return active.slice().sort(function (a, b) { return val(a) - val(b); }).slice(0, Math.max(0, active.length - size));
+  }
 
   function without(list, remove) {
     var ids = {};
@@ -391,18 +415,22 @@
    * when given, `theirsModel` always uses our model.
    */
   function evaluateTrade(mine, theirs, give, get, ctx) {
-    var size = ctx.rosterSize;
+    var size = ctx.rosterSize, irs = ctx.irSlots;
     var myAfterList = without(mine, give).concat(get), theirAfterList = without(theirs, get).concat(give);
+    // A roster over the limit keeps its best players: the extra ones count for nothing (dropped).
     var delta = function (before, after, val) {
-      return teamValue(after, ctx.roster, val, ctx.fill, Math.max(size, activeCount(after))) -
-        teamValue(before, ctx.roster, val, ctx.fill, Math.max(size, activeCount(before)));
+      return teamValue(after, ctx.roster, val, ctx.fill, Math.max(size, activeCount(after, irs)), irs) -
+        teamValue(before, ctx.roster, val, ctx.fill, Math.max(size, activeCount(before, irs)), irs);
     };
     var theirsModel = delta(theirs, theirAfterList, ctx.val);
+    // Drops this trade adds, beyond any you already owe (e.g. someone back from IR).
+    var extra = Math.max(0, activeCount(myAfterList, irs) - Math.max(size, activeCount(mine, irs)));
     return {
       mine: delta(mine, myAfterList, ctx.val),
       theirs: ctx.theirVal ? delta(theirs, theirAfterList, ctx.theirVal) : theirsModel,
       theirsModel: theirsModel,
-      dropsNeeded: Math.max(0, activeCount(myAfterList) - size)
+      dropsNeeded: extra,
+      drops: extra ? dropsFor(myAfterList, activeCount(myAfterList, irs) - extra, ctx.val, irs) : []
     };
   }
 
@@ -428,7 +456,7 @@
         sh[0].forEach(function (give) {
           sh[1].forEach(function (get) {
             var r = evaluateTrade(mine, t.players, give, get, t.val ? Object.assign({}, ctx, { theirVal: t.val }) : ctx);
-            if (r.mine > 0 && r.theirs >= -tolerance) out.push({ team: t, give: give, get: get, mine: r.mine, theirs: r.theirs, theirsModel: r.theirsModel });
+            if (r.mine > 0 && r.theirs >= -tolerance) out.push({ team: t, give: give, get: get, mine: r.mine, theirs: r.theirs, theirsModel: r.theirsModel, drops: r.drops });
           });
         });
       });
@@ -439,13 +467,13 @@
 
   // Best add/drop for each free agent: team value gain from swapping him in.
   function waiverMoves(mine, freeAgents, ctx) {
-    var size = Math.max(ctx.rosterSize, activeCount(mine));
-    var base = teamValue(mine, ctx.roster, ctx.val, ctx.fill, size);
+    var size = Math.max(ctx.rosterSize, activeCount(mine, ctx.irSlots));
+    var base = teamValue(mine, ctx.roster, ctx.val, ctx.fill, size, ctx.irSlots);
     return freeAgents.map(function (fa) {
       var best = null;
       mine.forEach(function (p) {
         if (ctx.undroppable && ctx.undroppable(p)) return;
-        var v = teamValue(without(mine, [p]).concat([fa]), ctx.roster, ctx.val, ctx.fill, size) - base;
+        var v = teamValue(without(mine, [p]).concat([fa]), ctx.roster, ctx.val, ctx.fill, size, ctx.irSlots) - base;
         if (!best || v > best.gain) best = { drop: p, gain: v };
       });
       return { add: fa, drop: best && best.drop, gain: best ? best.gain : 0 };
@@ -633,6 +661,8 @@
     LINE_WEIGHT: LINE_WEIGHT,
     rosValue: rosValue,
     teamValue: teamValue,
+    splitIR: splitIR,
+    IR_STASH_WEEKS: IR_STASH_WEEKS,
     evaluateTrade: evaluateTrade,
     findTrades: findTrades,
     waiverMoves: waiverMoves
