@@ -16,8 +16,7 @@
   color-scheme: dark;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
+:root[data-theme="light"] {
     --bg: #f4f6fb;
     --panel: #ffffff;
     --panel-2: #eef1f7;
@@ -31,7 +30,6 @@
     --mine: rgba(16, 149, 116, 0.12);
     --gone: rgba(93, 106, 133, 0.08);
     color-scheme: light;
-  }
 }
 
 * { box-sizing: border-box; }
@@ -145,7 +143,7 @@ table.board { width: 100%; border-collapse: collapse; font-variant-numeric: tabu
 .slot { font-size: 11px; font-weight: 700; color: var(--muted); }
 .slot-empty { color: var(--muted); font-style: italic; }
 .pick-list { display: flex; flex-wrap: wrap; gap: 6px; }
-.pick-pill { font-size: 12px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--line); }
+.pick-pill { display: inline-block; white-space: nowrap; font-size: 12px; line-height: 1.4; padding: 2px 8px; margin: 2px 4px 2px 0; border-radius: 999px; border: 1px solid var(--line); }
 .pick-pill.done { opacity: 0.5; text-decoration: line-through; }
 .pick-pill.next { border-color: var(--accent-2); color: var(--accent-2); font-weight: 700; }
 .pick-feed { max-height: 260px; overflow-y: auto; font-size: 12px; margin-bottom: 8px; }
@@ -176,7 +174,11 @@ table.board { width: 100%; border-collapse: collapse; font-variant-numeric: tabu
 
 /* Phones */
 .plan-grid { grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); }
-.detail-table td { overflow-wrap: anywhere; }
+.detail-table td { overflow-wrap: break-word; }
+.detail-table td.cur { white-space: nowrap; vertical-align: top; }
+.lock-ctl { margin-top: 4px; }
+.lock-ctl select { width: 100%; max-width: 340px; }
+.theme-btn { min-width: 38px; }
 .tab { white-space: nowrap; }
 @media (max-width: 600px) {
   .topbar { position: static; padding: 10px 12px; gap: 8px; }

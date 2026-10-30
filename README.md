@@ -19,6 +19,8 @@ The tool works as a home-screen app once it's on a web address (see below). Open
   a cached copy offline.
 - **Fresh data:** it reloads when you come back to it after a few minutes, and every 10 minutes
   while open.
+- **Dark mode by default:** the ☀ / ☾ button in the header switches themes, and each device
+  remembers its choice.
 - **Settings stay per device:** your team, manual locks and overrides live in each browser, so set
   them once on the phone.
 
@@ -97,7 +99,7 @@ steals, blocks, double-double) for upcoming games, usually the next day's, for a
 players per game. Both sides' payouts give the chance of the over, with the house margin removed.
 That gives an expected value for each stat: normal for points/rebounds/assists, Poisson for the
 rest. Those stats are blended 70% lines / 30% Sleeper's projection, then scored with your league's
-settings. Games with lines show **($)**; hover for both numbers. Lines track minutes and role better:
+settings. Games with lines show **$**; hover for both numbers. Lines track minutes and role better:
 on 10/28 Sleeper projected Mamukelashvili for 15.9 pts / 7.9 reb, his lines said ~11.8 / 4.8, and
 he was averaging 9.5 / 4.0. Sportsbooks (DraftKings, FanDuel), PrizePicks and Underdog block
 browser access; The Odds API needs a paid key for this volume.

@@ -542,15 +542,15 @@
   function statusControl(sp) {
     var ls = lockState(sp.id);
     var det = (st.autoLock || {})[sp.id] || {};
-    var autoLabel = det.status === 'locked' ? 'Sleeper: locked ' + fmt(det.score) + (det.date ? ' (' + dayLabel(det.date + 'T16:00:00Z').split(',')[0] + ')' : '') :
-      autoPickup(sp.id) ? 'Sleeper: added mid-week' : det.source === 'sleeper' ? 'Sleeper: not locked' :
-      det.status === 'open' ? 'Sleeper: not locked' : det.waiting ? 'Sleeper: still processing his last game' :
-      det.status === 'unknown' && det.index != null ? 'Sleeper: latest game counts (a lock on it shows once he plays again)' : 'Sleeper: nothing locked';
+    // "Auto" = read from Sleeper; the other choices override it.
+    var autoLabel = det.status === 'locked' ? 'Auto: locked ' + fmt(det.score) + (det.date ? ' ' + dayLabel(det.date + 'T16:00:00Z').split(',')[0] : '') :
+      autoPickup(sp.id) ? 'Auto: added mid-week' : det.source === 'sleeper' ? 'Auto: not locked' : det.waiting ? 'Auto: Sleeper still processing' :
+      det.status === 'open' ? 'Auto: not locked' : det.status === 'unknown' && det.index != null ? 'Auto: latest game counts' : 'Auto: nothing locked';
     return '<select data-lockstate="' + esc(sp.id) + '">' +
       '<option value="auto"' + (ls.auto || ls.type === 'auto' ? ' selected' : '') + '>' + esc(autoLabel) + '</option>' +
-      '<option value="open"' + (ls.type === 'open' ? ' selected' : '') + '>Not locked</option>' +
-      '<option value="locked"' + (ls.type === 'locked' && !ls.auto ? ' selected' : '') + '>Locked</option>' +
-      '<option value="pickup"' + (ls.type === 'pickup' && !ls.auto ? ' selected' : '') + '>Added mid-week</option></select>' +
+      '<option value="open"' + (ls.type === 'open' ? ' selected' : '') + '>Set: not locked</option>' +
+      '<option value="locked"' + (ls.type === 'locked' && !ls.auto ? ' selected' : '') + '>Set: locked</option>' +
+      '<option value="pickup"' + (ls.type === 'pickup' && !ls.auto ? ' selected' : '') + '>Set: added mid-week</option></select>' +
       (ls.type === 'locked' && !ls.auto ? ' <input data-lockscore="' + esc(sp.id) + '" type="number" step="0.5" style="width:70px" value="' + esc(ls.score != null ? ls.score : (sp.pending != null ? sp.pending : sp.shown || 0)) + '">' : '') +
       (ls.type === 'pickup' && !ls.auto ? '<div class="small muted">in lineup since <input data-locksince="' + esc(sp.id) + '" type="date" value="' + esc(ls.since || st.today) + '" style="width:auto;padding:2px 4px"> (earlier games don\'t count)</div>' : '');
   }
@@ -559,8 +559,9 @@
     return '<table class="detail-table">' + list.map(function (sp) {
       var p = sp.p;
       var games = p && p.week ? gameChips(p) : '';
-      var cur = sp.locked != null ? '<strong class="good">' + fmt(sp.locked) + ' locked</strong>' + (lockState(sp.id).auto ? ' <span class="muted">(Sleeper)</span>' : '') : sp.pending != null ? fmt(sp.pending) + ' lockable' : (sp.shown ? fmt(sp.shown) + ' (Sleeper)' : '–');
-      return '<tr><td>' + (p ? nameCell(p) : esc(sp.name)) + '<div class="small">' + games + '</div></td><td class="num small">' + cur + '<br><span class="muted">exp ' + fmt(expectFn(sp)) + '</span></td><td>' + statusControl(sp) + '</td></tr>';
+      var cur = sp.locked != null ? '<strong class="good">' + fmt(sp.locked) + ' locked</strong>' : sp.pending != null ? fmt(sp.pending) + ' lockable' : (sp.shown ? fmt(sp.shown) + ' (Sleeper)' : '–');
+      return '<tr><td>' + (p ? nameCell(p) : esc(sp.name)) + '<div class="small">' + games + '</div><div class="lock-ctl">' + statusControl(sp) + '</div></td>' +
+        '<td class="num small cur">' + cur + '<br><span class="muted">exp ' + fmt(expectFn(sp)) + '</span></td></tr>';
     }).join('') + '</table>';
   }
 
@@ -585,7 +586,7 @@
       bars.map(function (b) {
         return '<tr><td>' + nameCell(b.player.p || { id: b.player.id, name: b.player.name, team: '', pos: [] }) + '</td><td class="num">' + b.player.left + '</td><td class="num"><strong>' + fmt(b.bar) + '</strong></td><td class="num muted">' + fmt(b.standardBar) + '</td></tr>';
       }).join('') + '</tbody></table></div>' : '';
-    var lineups = '<h3>Lineups</h3><p class="small muted">' + (st.lockDate ? 'Locks for both teams come straight from Sleeper, and mid-week pickups from the league\'s transactions.' : 'Sleeper\'s lock data didn\'t load, so locks are inferred from the score each player counts (a lock on his latest game only shows once he plays again). Mark any you know.') + ' Override any player with the menu. "exp" is his expected locked score.</p><div class="plan-grid">' +
+    var lineups = '<h3>Lineups</h3><p class="small muted">' + (st.lockDate ? 'Locks for both teams come straight from Sleeper, and mid-week pickups from the league\'s transactions.' : 'Sleeper\'s lock data didn\'t load, so locks are inferred from the score each player counts (a lock on his latest game only shows once he plays again). Mark any you know.') + ' "Auto" is what Sleeper shows; pick a "Set" option to override a player. "exp" is his expected locked score.</p><div class="plan-grid">' +
       '<div class="card"><h3>You</h3>' + lineupTable(mine, expMine) + '</div><div class="card"><h3>' + esc(oppName) + '</h3>' + lineupTable(theirs, expTheirs) + '</div></div>';
     return head + dec + barsHtml + lineups;
   }
@@ -602,16 +603,17 @@
 
   function gameChips(p) {
     return p.week.games.map(function (x) {
-      var label = dayLabel(x.game.date);
+      // Weekday only (the week is known); the full date is in the tooltip.
+      var full = dayLabel(x.game.date), label = full.split(',')[0];
       var b2b = p.week && p.week.games.some(function (y) { return S.easternDate(new Date(y.game.date)) === S.addDays(S.easternDate(new Date(x.game.date)), -1); });
       if (x.state === 'pre') {
         var lines = x.proj && x.proj.fpLines != null;
         var title = lines ? 'Projection ' + fmt(x.proj.fp) + ': betting lines ' + fmt(x.proj.fpLines) + ' (70%), Sleeper ' + fmt(x.proj.fpSleeper) + ' (30%)' : 'Sleeper projection';
-        return '<span class="pick-pill" title="' + title + (b2b ? '; 2nd night of a back-to-back: a bit more likely to rest' : '') + '">' + label + (b2b ? ' (B2B)' : '') + (x.proj ? ' · proj ' + fmt(x.proj.fp, 0) + (lines ? ' ($)' : '') : '') + '</span>';
+        return '<span class="pick-pill" title="' + full + ': ' + title + (b2b ? '; 2nd night of a back-to-back: a bit more likely to rest' : '') + '">' + label + (b2b ? ' B2B' : '') + (x.proj ? ' · proj ' + fmt(x.proj.fp, 0) + (lines ? ' $' : '') : '') + '</span>';
       }
-      if (x.state === 'in') return '<span class="pick-pill next">' + label + ' live</span>';
-      if (x.dnp) return '<span class="pick-pill done">' + label + ' DNP</span>';
-      return '<span class="pick-pill' + (p.week.pending === x ? ' next' : '') + '">' + label + ': <strong>' + fmt(x.fp) + '</strong></span>';
+      if (x.state === 'in') return '<span class="pick-pill next" title="' + full + '">' + label + ' live</span>';
+      if (x.dnp) return '<span class="pick-pill done" title="' + full + '">' + label + ' DNP</span>';
+      return '<span class="pick-pill' + (p.week.pending === x ? ' next' : '') + '" title="' + full + '">' + label + ' <strong>' + fmt(x.fp) + '</strong></span>';
     }).join(' ') || '<span class="muted small">no games</span>';
   }
 
