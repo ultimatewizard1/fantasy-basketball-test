@@ -84,16 +84,13 @@ on 10/28 Sleeper projected Mamukelashvili for 15.9 pts / 7.9 reb, his lines said
 he was averaging 9.5 / 4.0. Sportsbooks (DraftKings, FanDuel), PrizePicks and Underdog block
 browser access; The Odds API needs a paid key for this volume.
 
-**Locks and pickups from Sleeper.** Sleeper doesn't publish locks directly, but each matchup lists
-the score every player currently counts. If that equals an *earlier* game even though he has played
-since, that game is locked. Both teams' locks are read this way, matched against ESPN box scores and
-Sleeper's own box scores (which include technical fouls). Two limits:
-- **Sleeper lags:** for a few hours after a game ends, Sleeper can still show the player's
-  previous game. On 10/28 at 10:55 pm ET, Giannis, Flagg and Durant all still showed Monday's
-  score. So a lock is only inferred once his later game is about 12 hours old (the morning after).
-- **Locks on the latest game:** a lock on a player's latest game looks the same as not locking
-  until his next game has been played. Mark those by hand if you know them.
-Mid-week pickups come from the league's transactions; games that tipped before the pickup don't count.
+**Locks and pickups from Sleeper.** Locks for both teams come from Sleeper's GraphQL API, the
+one its own app uses. `matchup_legs_raw` works without signing in, and for each starter it gives the
+game he's locked on. That game's box score gives the locked score. Mid-week pickups come from the
+league's transactions; games that tipped before the pickup don't count. If the lock data doesn't
+load, the tool falls back to inferring locks from the score each player counts in the public
+matchups API. That fallback is unreliable: those scores lag and sometimes show a game other than the
+one locked. You can override any player by hand.
 
 **Roster spots and IR.** When a trade leaves you over the roster limit, your lowest-valued players
 are dropped. Their loss is part of the trade value, and the result names who you'd drop. So

@@ -69,7 +69,8 @@
         Sleeper.matchups(cfg.leagueId, out.week).catch(function () { return []; }),
         Sleeper.lines().catch(function () { return []; }),
         Sleeper.weekStats(out.league.season, out.week).catch(function () { return []; }),
-        Sleeper.transactions(cfg.leagueId, out.week).catch(function () { return []; })
+        Sleeper.transactions(cfg.leagueId, out.week).catch(function () { return []; }),
+        Sleeper.lockedGames(cfg.leagueId, out.week).catch(function () { return null; })
       ]);
     }).then(function (r) {
       out.seasonStats = r[0];
@@ -79,6 +80,7 @@
       out.lines = S.linesByGame(r[5]);
       out.weekStatsRaw = r[6] || [];
       out.pickups = S.pickupTimes(r[7]);
+      out.lockedRaw = r[8];
       st = out;
       pickMyTeam();
       buildValues();
@@ -176,6 +178,17 @@
     });
     st.shown = {};
     (st.matchups || []).forEach(function (m) { Object.keys(m.players_points || {}).forEach(function (id) { st.shown[id] = m.players_points[id]; }); });
+    // Sleeper's lock data: playerId -> date of the game he's locked on (Sleeper game ids are
+    // mapped to dates through this week's box scores and projections). null if unavailable.
+    st.lockDate = null;
+    if (st.lockedRaw) {
+      var gameDate = {};
+      st.weekStatsRaw.concat(st.weekProjRaw.this).forEach(function (r) { if (r && r.game_id && r.date) gameDate[r.game_id] = r.date; });
+      st.lockDate = {};
+      Object.keys(st.lockedRaw).forEach(function (rid) {
+        Object.keys(st.lockedRaw[rid]).forEach(function (pid) { st.lockDate[pid] = gameDate[st.lockedRaw[rid][pid]] || '?'; });
+      });
+    }
     st.rosterOf = {};
     st.rosters.forEach(function (r) { (r.players || []).forEach(function (id) { st.rosterOf[id] = r.roster_id; }); });
     st.roster = st.league.roster_positions || C.DEFAULT_ROSTER;
@@ -365,7 +378,13 @@
           if (list[i].state !== 'pre') break;
         }
       }
-      if (mineIds[id]) {
+      if (mineIds[id] && st.lockDate) {
+        var ld = st.lockDate[id];
+        var lg = ld ? list.filter(function (x) { return S.easternDate(new Date(x.game.date)) === ld; })[0] : null;
+        st.autoLock[id] = ld
+          ? { status: 'locked', source: 'sleeper', date: ld, score: lg ? (lg.fpSleeper != null ? lg.fpSleeper : lg.fp) : st.shown[id] }
+          : { status: 'open', source: 'sleeper' };
+      } else if (mineIds[id]) {
         st.autoLock[id] = S.detectLock(list.filter(function (x) { return !x.beforePickup; }).map(function (x) {
           return { state: x.state, dnp: x.dnp, fps: [x.fp, x.fpSleeper], settled: x.state === 'post' && Date.now() - Date.parse(x.game.date) > SETTLE_MS };
         }), st.shown[id]);
@@ -523,7 +542,8 @@
   function statusControl(sp) {
     var ls = lockState(sp.id);
     var det = (st.autoLock || {})[sp.id] || {};
-    var autoLabel = det.status === 'locked' ? 'Sleeper: locked ' + fmt(det.score) : autoPickup(sp.id) ? 'Sleeper: added mid-week' :
+    var autoLabel = det.status === 'locked' ? 'Sleeper: locked ' + fmt(det.score) + (det.date ? ' (' + dayLabel(det.date + 'T16:00:00Z').split(',')[0] + ')' : '') :
+      autoPickup(sp.id) ? 'Sleeper: added mid-week' : det.source === 'sleeper' ? 'Sleeper: not locked' :
       det.status === 'open' ? 'Sleeper: not locked' : det.waiting ? 'Sleeper: still processing his last game' :
       det.status === 'unknown' && det.index != null ? 'Sleeper: latest game counts (a lock on it shows once he plays again)' : 'Sleeper: nothing locked';
     return '<select data-lockstate="' + esc(sp.id) + '">' +
@@ -565,7 +585,7 @@
       bars.map(function (b) {
         return '<tr><td>' + nameCell(b.player.p || { id: b.player.id, name: b.player.name, team: '', pos: [] }) + '</td><td class="num">' + b.player.left + '</td><td class="num"><strong>' + fmt(b.bar) + '</strong></td><td class="num muted">' + fmt(b.standardBar) + '</td></tr>';
       }).join('') + '</tbody></table></div>' : '';
-    var lineups = '<h3>Lineups</h3><p class="small muted">Locks and mid-week pickups are read from Sleeper: a player is locked when the score he counts is an earlier game even though he has played since. A lock on his <em>latest</em> game only becomes visible once his next game starts, so mark those yourself if you know. "exp" is his expected locked score.</p><div class="plan-grid">' +
+    var lineups = '<h3>Lineups</h3><p class="small muted">' + (st.lockDate ? 'Locks for both teams come straight from Sleeper, and mid-week pickups from the league\'s transactions.' : 'Sleeper\'s lock data didn\'t load, so locks are inferred from the score each player counts (a lock on his latest game only shows once he plays again). Mark any you know.') + ' Override any player with the menu. "exp" is his expected locked score.</p><div class="plan-grid">' +
       '<div class="card"><h3>You</h3>' + lineupTable(mine, expMine) + '</div><div class="card"><h3>' + esc(oppName) + '</h3>' + lineupTable(theirs, expTheirs) + '</div></div>';
     return head + dec + barsHtml + lineups;
   }

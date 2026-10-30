@@ -19,7 +19,7 @@ Writes (Python standard library only):
                                         "how much worse are projections made days ahead")
 Dates are US Eastern. Actual results come later from Sleeper's stats archive.
 """
-import json, os, sys, urllib.request
+import json, os, sys, urllib.parse, urllib.request
 from datetime import datetime, timedelta, timezone
 
 LINES = 'https://api.sleeper.app/lines/available?dynamic=true&include_preseason=true'
@@ -101,6 +101,10 @@ def main(out):
         msnap = load(mpath)
         msnap[stamp] = {str(m['roster_id']): {pid: m.get('players_points', {}).get(pid) for pid in m.get('starters') or []}
                         for m in get(MATCHUPS.format(league=LEAGUE, week=week))}
+        # Locked games ({roster: {player: sleeper game id}}), from the GraphQL API Sleeper's app uses.
+        q = '{ matchup_legs_raw(league_id: "%s", round: %d) { roster_id starters_games } }' % (LEAGUE, week)
+        legs = get('https://sleeper.com/graphql?' + urllib.parse.urlencode({'query': q}))['data']['matchup_legs_raw']
+        msnap[stamp]['locks'] = {str(m['roster_id']): m.get('starters_games') or {} for m in legs}
         save(mpath, msnap)
     except Exception as e:
         print('matchups unavailable:', e)

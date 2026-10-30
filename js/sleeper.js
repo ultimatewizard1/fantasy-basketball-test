@@ -125,6 +125,17 @@
       var pos = POSITIONS.map(function (p) { return 'position[]=' + p; }).join('&');
       return getJson(WEB + '/stats/nba/' + season + '/' + week + '?season_type=regular&' + pos);
     },
+    // Locked games this week: { rosterId: { playerId: sleeperGameId } }. From the GraphQL
+    // endpoint Sleeper's own app uses (matchup_legs_raw works without signing in).
+    lockedGames: function (leagueId, week) {
+      var q = '{ matchup_legs_raw(league_id: "' + leagueId + '", round: ' + week + ') { roster_id starters_games } }';
+      return getJson('https://sleeper.com/graphql?query=' + encodeURIComponent(q)).then(function (d) {
+        if (!d || !d.data || !d.data.matchup_legs_raw) throw new Error('no lock data');
+        var out = {};
+        d.data.matchup_legs_raw.forEach(function (m) { out[m.roster_id] = m.starters_games || {}; });
+        return out;
+      });
+    },
     transactions: function (leagueId, week) { return getJson(V1 + '/league/' + leagueId + '/transactions/' + week); },
     // Sleeper Picks over/under lines for upcoming games (all sports; usually the next day's NBA games).
     lines: function () { return getJson(LINES); },
