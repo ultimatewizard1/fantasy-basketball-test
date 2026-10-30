@@ -11,6 +11,24 @@ syncs live with your Sleeper draft.
 - [CHEATSHEET.md](CHEATSHEET.md): printable rankings, pick-by-pick targets, injury traps and
   values.
 
+## On your phone
+
+The tool works as a home-screen app once it's on a web address (see below). Open
+`…/season.html` in Safari (iPhone) or Chrome (Android) → **Share** → **Add to Home Screen**.
+- **Always the latest version:** it fetches the newest code every time it opens, falling back to
+  a cached copy offline.
+- **Fresh data:** it reloads when you come back to it after a few minutes, and every 10 minutes
+  while open.
+- **Settings stay per device:** your team, manual locks and overrides live in each browser, so set
+  them once on the phone.
+
+**Hosting.** Any static host works; there's no build step and no server.
+- **GitHub Pages** (public repo): Settings → Pages → *Deploy from a branch* → `main`, `/ (root)`.
+  The site is `https://ultimatewizard1.github.io/fantasy-basketball-test/season.html` and updates
+  about a minute after each push.
+- **Cloudflare Pages or Netlify** (repo stays private; free): connect the GitHub repo, leave the build
+  command empty, set the output directory to `/`. Each push to `main` redeploys.
+
 ## Run it
 
 It's a static page with no build step and no dependencies. Download the repo and double-click

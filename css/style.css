@@ -173,3 +173,22 @@ table.board { width: 100%; border-collapse: collapse; font-variant-numeric: tabu
 .detail-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .detail-table td { padding: 4px 6px; border-bottom: 1px solid var(--line); }
 .detail-table .num { text-align: right; }
+
+/* Phones */
+.plan-grid { grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr)); }
+.detail-table td { overflow-wrap: anywhere; }
+.tab { white-space: nowrap; }
+@media (max-width: 600px) {
+  .topbar { position: static; padding: 10px 12px; gap: 8px; }
+  .topbar h1 { font-size: 20px; margin: 0; }
+  .topbar-actions { width: 100%; gap: 8px; }
+  .topbar-actions label { flex: 1 1 auto; }
+  .topbar-actions select { width: 100%; }
+  .tabs { padding: 8px 8px 0; gap: 2px; position: sticky; top: 0; z-index: 5; background: var(--bg); }
+  .tab { padding: 8px 10px; }
+  main { padding: 0 8px 32px; }
+  .tab-panel { padding: 10px; border-radius: 0 0 var(--radius) var(--radius); }
+  .card { padding: 10px; }
+  /* 16px inputs stop iOS from zooming in on tap. */
+  input, select, textarea { font-size: 16px; }
+}

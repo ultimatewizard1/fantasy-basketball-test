@@ -928,4 +928,13 @@
 
   bind();
   loadAll();
+
+  // Keep data fresh: reload when you come back to the app after a few minutes away, and
+  // every 10 minutes while it's open (live games, new locks, injury news).
+  var lastLoad = Date.now();
+  var reload = function () { lastLoad = Date.now(); loadAll(); };
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible' && Date.now() - lastLoad > 3 * 60 * 1000) reload();
+  });
+  setInterval(function () { if (document.visibilityState === 'visible') reload(); }, 10 * 60 * 1000);
 })();
