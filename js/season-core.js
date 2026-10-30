@@ -442,12 +442,25 @@
   }
 
   /*
-   * Trades (1-for-1, 2-for-1, 1-for-2) that help me and don't hurt them by
-   * more than `tolerance`, best for me first.
+   * Trades (1-for-1, 2-for-1, 1-for-2) a real manager would plausibly accept,
+   * best for me first. The other side must:
+   *  - not lose value by our projections (theirsModel >= minModel): most
+   *    managers check rankings or projections before accepting;
+   *  - see a gain the way they value players (theirs >= minTheirs): market
+   *    view plus their short-term needs;
+   *  - not give up the best player in the deal for clearly less: the best
+   *    player they get must be worth >= STAR_RATIO of the best they give,
+   *    by market value (opts.market). Two decent players rarely buy a star.
+   * Near-duplicates are collapsed: one deal per set of players I'd get.
    */
+  var STAR_RATIO = 0.85;
+
   function findTrades(mine, teams, ctx, opts) {
     opts = opts || {};
-    var tolerance = opts.tolerance == null ? 0 : opts.tolerance;
+    var minTheirs = opts.minTheirs == null ? 0 : opts.minTheirs;
+    var minModel = opts.minModel == null ? 0 : opts.minModel;
+    var market = opts.market;
+    var best = function (list, f) { return list.reduce(function (m, p) { return Math.max(m, f(p)); }, -Infinity); };
     var out = [];
     var combos = function (list, k) {
       var res = [];
@@ -462,14 +475,21 @@
       shapes.forEach(function (sh) {
         sh[0].forEach(function (give) {
           sh[1].forEach(function (get) {
+            if (market && best(give, market) < STAR_RATIO * best(get, market)) return;
             var r = evaluateTrade(mine, t.players, give, get, t.val ? Object.assign({}, ctx, { theirVal: t.val }) : ctx);
-            if (r.mine > 0 && r.theirs >= -tolerance) out.push({ team: t, give: give, get: get, mine: r.mine, theirs: r.theirs, theirsModel: r.theirsModel, drops: r.drops });
+            if (r.mine > 0 && r.theirs >= minTheirs && r.theirsModel >= minModel) out.push({ team: t, give: give, get: get, mine: r.mine, theirs: r.theirs, theirsModel: r.theirsModel, drops: r.drops });
           });
         });
       });
     });
     out.sort(function (a, b) { return b.mine - a.mine; });
-    return out.slice(0, opts.limit || 25);
+    var seen = {}, perTeam = {};
+    return out.filter(function (t) {
+      var key = t.team.name + '|' + t.get.map(function (p) { return p.id; }).sort().join(',');
+      if (seen[key] || (perTeam[t.team.name] || 0) >= (opts.perTeam || 4)) return false;
+      seen[key] = 1; perTeam[t.team.name] = (perTeam[t.team.name] || 0) + 1;
+      return true;
+    }).slice(0, opts.limit || 25);
   }
 
   // Best add/drop for each free agent: team value gain from swapping him in.
@@ -672,6 +692,7 @@
     IR_STASH_WEEKS: IR_STASH_WEEKS,
     evaluateTrade: evaluateTrade,
     findTrades: findTrades,
-    waiverMoves: waiverMoves
+    waiverMoves: waiverMoves,
+    STAR_RATIO: STAR_RATIO
   };
 });

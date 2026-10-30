@@ -259,7 +259,9 @@
       var nameFpg = p.adp != null ? byProj[Math.min(byProj.length - 1, Math.max(0, Math.round(p.adp) - 1))] : p.projFpg;
       var perceived = S.perceivedFpg(nameFpg, p.seasonFpg || 0, p.gp);
       p.marketFpg = perceived == null ? p.mu : perceived;
-      p.market = S.rosValue(C.lockInWeekly(p.marketFpg, p.cv), st.weeksLeft, p.durability, p.weeksOut);
+      // Managers barely discount their own injured players (a star who's back for the playoffs
+      // is still a star to them), so the market only counts part of the time out.
+      p.market = S.rosValue(C.lockInWeekly(p.marketFpg, p.cv), st.weeksLeft, p.durability, MARKET_INJURY_SHARE * (p.weeksOut || 0));
       p.form = p.gp >= 2 && p.projFpg != null ? p.seasonFpg - p.projFpg : null;
       // Production over the next ~3 weeks: what a team short on healthy players cares about.
       p.near = Math.max(0, 3 - Math.min(3, p.weeksOut || 0)) * p.weekly * S.playProb(p.injury && !/out/i.test(p.injury) ? p.injury : '');
@@ -732,11 +734,13 @@
 
   var tradePick = { give: {}, get: {} };
 
+  var MARKET_INJURY_SHARE = 0.4;
+
   // How a team likely values players: market view plus, when it is short on
-  // healthy players, extra weight on the next ~3 weeks of production.
+  // healthy players, some extra weight on the next ~3 weeks of production.
   function theirValFor(rosterId) {
     var u = (st.teamInfo[rosterId] || {}).urgency || 0;
-    return function (p) { return (p.market || 0) + 1.5 * u * (p.near || 0); };
+    return function (p) { return (p.market || 0) + 0.75 * u * (p.near || 0); };
   }
 
   function marketTag(p) {
@@ -795,8 +799,9 @@
   }
 
   function verdictText(r) {
-    if (r.mine > 0 && r.theirs >= 0 && r.theirsModel < 0) return 'Good for you, and they\'ll likely see it as fair or better (market view and their needs), even though our numbers say they lose value. This is the kind of deal to pitch.';
-    if (r.mine > 0 && r.theirs >= 0) return 'Helps you, and they should like it too. Easy pitch.';
+    if (r.mine > 0 && r.theirs >= 0 && r.theirsModel >= 0) return 'Helps both teams: they gain by projections and it should look good to them. Realistic pitch.';
+    if (r.mine > 0 && r.theirsModel < 0) return 'Helps you, but they lose value by projections. Most managers check rankings before accepting, so expect a no unless they badly need what you\'re offering.';
+    if (r.mine > 0) return 'Helps both teams by projections, but they probably value the players they\'d give more (names, recent form). Might need a sweetener.';
     if (r.mine > 0) return 'Helps you, but they\'ll likely see it as a loss. Expect pushback, or add a sweetener.';
     return 'Doesn\'t help you by our numbers.';
   }
@@ -807,20 +812,20 @@
       var mine = rosterPlayers(myRoster());
       var teams = st.rosters.filter(function (r) { return r.roster_id !== cfg.myRosterId; })
         .map(function (r) { return { name: ownerName(r), players: rosterPlayers(r), val: theirValFor(r.roster_id), urgency: (st.teamInfo[r.roster_id] || {}).urgency || 0 }; });
-      var res = S.findTrades(mine, teams, waiverCtx(), { tolerance: 0, limit: 25 });
-      var list = function (ps) { return ps.map(function (p) { return esc(p.name) + ' ' + marketTag(p); }).join(' + '); };
+      var res = S.findTrades(mine, teams, waiverCtx(), { minTheirs: 5, minModel: 5, market: function (p) { return p.market || 0; }, limit: 25 });
+      var list = function (ps) { return ps.map(function (p) { return esc(p.name) + (p.weeksOut >= 1 ? ' <span class="bad small">out ~' + fmt(p.weeksOut, 0) + ' wk</span>' : '') + ' ' + marketTag(p); }).join(' + '); };
       var mineSorted = mine.slice().sort(function (a, b) { return (b.market - b.ros) - (a.market - a.ros); });
       var sellHigh = mineSorted.filter(function (p) { return p.market > p.ros * 1.1; }).slice(0, 5);
       var buyLow = Object.keys(st.pool).map(function (k) { return st.pool[k]; })
         .filter(function (p) { return st.rostered[p.id] && st.rostered[p.id] !== cfg.myRosterId && p.ros > p.market * 1.1 && p.ros > st.fill * 1.3; })
         .sort(function (a, b) { return (b.ros - b.market) - (a.ros - a.market); }).slice(0, 8);
       var owner = function (p) { return ownerName(st.rosters.filter(function (r) { return r.roster_id === st.rostered[p.id]; })[0]); };
-      $('tradeFinder').innerHTML = '<h2>Trades they\'d likely accept that help you</h2><p class="small muted">"Them (likely view)" uses market values and their needs; "Them (our numbers)" is our model. The best deals help you and look fine to them, even when our numbers say they lose.</p>' +
-        (res.length ? '<div class="table-wrap"><table class="board"><thead><tr><th>Team</th><th>You give</th><th>You get</th><th class="num">You</th><th class="num">Them (likely view)</th><th class="num">Them (our numbers)</th></tr></thead><tbody>' +
+      $('tradeFinder').innerHTML = '<h2>Trades that help both teams</h2><p class="small muted">Only deals where the other team also gains: by our projections (<em>Them (projections)</em>), and the way they likely value players (<em>Them (their view)</em>: names, recent form and how short-handed they are). They never give up the best player in the deal for clearly less. Out = injured, with weeks out.</p>' +
+        (res.length ? '<div class="table-wrap"><table class="board"><thead><tr><th>Team</th><th>You give</th><th>You get</th><th class="num">You</th><th class="num">Them (their view)</th><th class="num">Them (projections)</th></tr></thead><tbody>' +
         res.map(function (t) {
           return '<tr><td>' + esc(t.team.name) + (t.team.urgency >= 0.25 ? ' <span class="warnc small">needs help</span>' : '') + '</td><td>' + list(t.give) + '</td><td>' + list(t.get) + (t.drops && t.drops.length ? '<div class="small muted">you drop ' + t.drops.map(function (p) { return esc(p.name); }).join(', ') + '</div>' : '') + '</td>' +
             '<td class="num good">+' + fmt(t.mine, 0) + '</td><td class="num">' + (t.theirs >= 0 ? '+' : '') + fmt(t.theirs, 0) + '</td><td class="num ' + (t.theirsModel < 0 ? 'muted' : '') + '">' + (t.theirsModel >= 0 ? '+' : '') + fmt(t.theirsModel, 0) + '</td></tr>';
-        }).join('') + '</tbody></table></div>' : '<p class="muted">No deals found that help you and that they\'d likely accept.</p>') +
+        }).join('') + '</tbody></table></div>' : '<p class="muted">No deals found that help both teams. That\'s common: a fair trade needs each side to have a surplus the other lacks. Try Evaluate with specific players, or check back after injuries shake up rosters.</p>') +
         '<div class="plan-grid"><div class="card"><h3>Buy-low targets</h3><p class="small muted">Our value is well above what their manager likely thinks.</p><table class="detail-table">' +
         buyLow.map(function (p) { return '<tr><td>' + nameCell(p) + '</td><td class="small muted">' + esc(owner(p)) + '</td><td class="num">' + formCell(p) + '</td><td class="num">' + fmt(p.ros, 0) + ' vs ' + fmt(p.market, 0) + '</td></tr>'; }).join('') +
         '</table></div><div class="card"><h3>Sell-high on your roster</h3><p class="small muted">The market likely values him above our numbers.</p><table class="detail-table">' +

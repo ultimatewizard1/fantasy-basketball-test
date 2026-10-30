@@ -80,8 +80,26 @@ test('trade evaluation is lineup-aware for both teams', () => {
   const r = S.evaluateTrade(mine, theirs, [mine[4]], [theirs[0]], ctx);
   assert.ok(r.mine > 0);
   assert.ok(r.theirs < 0);
-  const found = S.findTrades(mine, [{ name: 'T', players: theirs }], ctx, { tolerance: 1000 });
+  // With the other side's checks switched off, the finder still finds it.
+  const found = S.findTrades(mine, [{ name: 'T', players: theirs }], ctx, { minTheirs: -1e9, minModel: -1e9 });
   assert.ok(found.length > 0 && found[0].mine > 0);
+  // By default they must not lose value, by projections or by their own view: that swap is out.
+  const fair = S.findTrades(mine, [{ name: 'T', players: theirs }], ctx);
+  fair.forEach(t => assert.ok(t.theirsModel >= 0 && t.theirs >= 0 && t.mine > 0));
+  assert.ok(!fair.some(t => t.give.length === 1 && t.give[0].id === 'e' && t.get.length === 1 && t.get[0].id === 'x'));
+});
+
+test('trade finder: they keep their star unless they get back close to his value', () => {
+  const mine = [player('a', ['C'], 900), player('b', ['C'], 800), player('c', ['C'], 700), player('d', ['C'], 650), player('e', ['C'], 600)];
+  const theirs = [player('x', ['PG'], 700), player('y', ['SG'], 650)];
+  const market = p => (p.id === 'x' ? 1000 : p.v); // x is a big name to his manager
+  const open = { minTheirs: -1e9, minModel: -1e9, limit: 1000, perTeam: 1000 };
+  const loose = S.findTrades(mine, [{ name: 'T', players: theirs }], ctx, open);
+  const strict = S.findTrades(mine, [{ name: 'T', players: theirs }], ctx, Object.assign({ market }, open));
+  const cheap = t => t.get.some(p => p.id === 'x') && Math.max(...t.give.map(market)) < S.STAR_RATIO * 1000;
+  assert.ok(loose.some(cheap));
+  assert.ok(!strict.some(cheap));
+  assert.ok(strict.length > 0);
 });
 
 test('waiver moves pick the best drop', () => {
